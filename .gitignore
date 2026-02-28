@@ -51,4 +51,4 @@ kubeconfig
 charts/*.tgz
 
 # Vagrant (if used)
-.vagrant/%                                                                      
+.vagrant/                                                                    

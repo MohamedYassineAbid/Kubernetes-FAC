@@ -30,19 +30,7 @@ To provision the cluster, execute the following commands.
 cd vagrant-kubeadm-kubernetes
 vagrant up
 ```
-## Set Kubeconfig file variable
 
-```shell
-cd vagrant-kubeadm-kubernetes
-cd configs
-export KUBECONFIG=$(pwd)/config
-```
-
-or you can copy the config file to .kube directory.
-
-```shell
-cp config ~/.kube/
-```
 
 ## To shutdown the cluster,
 
