@@ -1,0 +1,31 @@
+---
+- name: Check if node is already part of a cluster
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Join the Kubernetes cluster
+  command: "{{ hostvars['controlplane']['kubeadm_join_command'] }}"
+  when: not kubelet_conf.stat.exists
+
+- name: Create .kube directory for vagrant
+  file:
+    path: /home/vagrant/.kube
+    state: directory
+    owner: vagrant
+    group: vagrant
+    mode: "0755"
+
+- name: Copy admin.conf to vagrant kubeconfig
+  copy:
+    src: "{{ playbook_dir }}/fetched/admin.conf"
+    dest: /home/vagrant/.kube/config
+    owner: vagrant
+    group: vagrant
+    mode: "0644"
+
+- name: Label node as worker
+  become_user: vagrant
+  command: "kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite"
+  register: label_result
+  changed_when: "'labeled' in label_result.stdout"

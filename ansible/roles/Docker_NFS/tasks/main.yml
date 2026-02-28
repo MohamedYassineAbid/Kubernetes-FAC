@@ -1,0 +1,123 @@
+---
+- name: Install required packages
+  apt:
+    name:
+      - git
+      - curl
+      - wget
+      - gnupg2
+      - nfs-kernel-server
+      - docker.io
+      - ufw
+    state: present
+    update_cache: true
+
+- name: Enable and start Docker
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create docker group
+  group:
+    name: docker
+    state: present
+
+- name: Add vagrant user to docker group
+  user:
+    name: vagrant
+    groups: docker
+    append: true
+
+
+- name: Create NFS export directory
+  file:
+    path: /srv/nfs/k8s
+    state: directory
+    owner: nobody
+    group: nogroup
+    mode: "0777"
+    recurse: true
+
+- name: Configure NFS exports
+  lineinfile:
+    path: /etc/exports
+    line: "/srv/nfs/k8s *(rw,sync,no_subtree_check,no_root_squash)"
+    state: present
+  notify: restart nfs
+
+- name: Export NFS shares
+  command: exportfs -rav
+  changed_when: false
+
+
+- name: Install required packages
+  apt:
+    name:
+      - git
+      - curl
+      - wget
+      - gnupg2
+      - nfs-kernel-server
+      - docker.io
+      - ufw
+      - ca-certificates
+      - apt-transport-https
+    state: present
+    update_cache: true
+
+- name: Enable and start Docker
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create docker group
+  group:
+    name: docker
+    state: present
+
+- name: Add vagrant user to docker group
+  user:
+    name: vagrant
+    groups: docker
+    append: true
+
+- name: Create keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download Docker GPG key
+  get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+- name: Add Docker apt repository
+  apt_repository:
+    repo: >
+      deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_lsb.codename }} stable
+    state: present
+    filename: docker
+
+- name: Install Docker Compose plugin
+  apt:
+    name:
+      - docker-compose-plugin
+      - docker-buildx-plugin
+    state: present
+    update_cache: true
+
+- name: Verify Docker Compose version
+  command: docker compose version
+  register: compose_version
+  changed_when: false
+
+- name: Show Docker Compose version
+  debug:
+    msg: "{{ compose_version.stdout }}"

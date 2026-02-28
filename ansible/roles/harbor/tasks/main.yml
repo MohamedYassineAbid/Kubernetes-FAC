@@ -1,0 +1,92 @@
+---
+- name: Download Harbor online installer
+  get_url:
+    url: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-online-installer-{{ harbor_version }}.tgz"
+    dest: "/tmp/harbor-online-installer-{{ harbor_version }}.tgz"
+    mode: '0644'
+
+- name: Extract Harbor archive
+  unarchive:
+    src: "/tmp/harbor-online-installer-{{ harbor_version }}.tgz"
+    dest: "/opt/"
+    remote_src: yes
+
+- name: Copy harbor.yml from template
+  copy:
+    src: "{{ harbor_install_dir }}/harbor.yml.tmpl"
+    dest: "{{ harbor_install_dir }}/harbor.yml"
+    remote_src: yes
+
+- name: Set harbor hostname
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^hostname: .*'
+    replace: "hostname: {{ harbor_hostname }}"
+
+- name: Set admin password
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^harbor_admin_password: .*'
+    replace: "harbor_admin_password: {{ harbor_admin_password }}"
+
+- name: Set data volume
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^data_volume: .*'
+    replace: "data_volume: {{ harbor_data_volume }}"
+
+- name: Comment out https block
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^(https:.*)$'
+    replace: '#\1'
+
+- name: Comment out https port
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^(\s*port: 443.*)$'
+    replace: '#\1'
+
+- name: Comment out ssl certificate line
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^(\s*certificate: .*)$'
+    replace: '#\1'
+
+- name: Comment out ssl private_key line
+  replace:
+    path: "{{ harbor_install_dir }}/harbor.yml"
+    regexp: '^(\s*private_key: .*)$'
+    replace: '#\1'
+
+- name: Run Harbor install script
+  command: ./install.sh
+  args:
+    chdir: "{{ harbor_install_dir }}"
+  register: install_output
+  changed_when: install_output.rc == 0
+
+- name: Show install output
+  debug:
+    var: install_output.stdout_lines
+
+- name: Start Harbor with docker compose
+  command: docker compose up -d
+  args:
+    chdir: "{{ harbor_install_dir }}"
+  register: harbor_start
+  changed_when: harbor_start.rc == 0
+
+- name: Wait for Harbor to be ready
+  uri:
+    url: "http://{{ harbor_hostname }}/api/v2.0/ping"
+    validate_certs: false
+    status_code: 200
+  register: harbor_ping
+  retries: 10
+  delay: 15
+  until: harbor_ping.status == 200
+
+- name: Harbor is ready
+  debug:
+    msg: "Harbor is up and running at http://{{ harbor_hostname }}"

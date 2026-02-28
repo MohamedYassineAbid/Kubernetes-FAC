@@ -1,0 +1,39 @@
+---
+
+- name: Common Kubernetes prerequisites
+  hosts: k8s_cluster
+  become: true
+  roles:
+    - { role: common, tags: ["init"] }
+
+- name: Initialize Kubernetes control plane
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: controlplane, tags: ["init"] }
+
+- name: Join worker nodes to the cluster
+  hosts: workers
+  become: true
+  serial: 1
+  roles:
+    - { role: worker, tags: ["init"] }
+
+- name: Install helm 
+  hosts: control_nodes
+  become: true
+  roles:
+    -  { role: helm, tags: ["deploy_helm"] }
+
+
+- name: Docker and nfs configuration
+  hosts: services
+  become: true
+  roles:
+    - { role: Docker_NFS, tags: ["dockernfs"] }
+  
+- name: harbor installation
+  hosts: services
+  become: true
+  roles:
+    - { role: harbor, tags: ["harbor"] }

@@ -1,0 +1,40 @@
+---
+#Network 
+control_ip: "10.0.0.10"
+dns_servers:
+  - "8.8.8.8"
+  - "1.1.1.1"
+pod_cidr: "172.16.1.0/16"
+service_cidr: "172.17.1.0/18"
+#kubernetes
+
+ip_nw: "10.0.0."
+ip_start: 10
+worker_count: 2
+kubernetes_version: "1.31.0-*"
+kubernetes_version_short: "1.31"
+calico_version: "3.26.0"
+os_name: "ubuntu/jammy64"
+
+services_ip: "10.0.0.80"
+
+#Longhorn
+longhorn_namespace: longhorn-system
+longhorn_replica_count: 1
+longhorn_storage_reserved_percentage: 15
+
+harbor_url: "10.0.0.80"
+harbor_user: "admin"
+harbor_pass: "Harbor12345"
+harbor_version: "v2.14.2"
+harbor_install_dir: "/opt/harbor"
+harbor_hostname: "10.0.0.80" 
+harbor_admin_password: "Harbor12345"  
+harbor_data_volume: "/data"
+# Resource optimization
+idle_timeout: "300"  
+cull_every: "60"     
+storage_class: "longhorn"
+user_storage_size: "5Gi"
+
+#harbor 
