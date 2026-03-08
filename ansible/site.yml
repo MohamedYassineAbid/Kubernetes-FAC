@@ -19,8 +19,15 @@
   roles:
     - { role: worker, tags: ["init"] }
 
+- name: waiting
+  hosts: controlplane
+  become: true
+  serial: 1
+  roles:
+    - { role: waiting, tags: ["init"] }
+
 - name: Install helm 
-  hosts: control_nodes
+  hosts: all
   become: true
   roles:
     -  { role: helm, tags: ["deploy_helm"] }

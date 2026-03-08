@@ -12,8 +12,10 @@ SERVICES_IP       = "10.0.0.80"
 # Resources
 CONTROL_CPU       = 3
 CONTROL_MEMORY    = 3072
+
 WORKER_CPU        = 2
 WORKER_MEMORY     = 3048
+
 SERVICES_CPU      = 2
 SERVICES_MEMORY   = 3072
 
