@@ -1,0 +1,6 @@
+---
+- name: Install Kyverno
+  ansible.builtin.include_tasks: install.yml
+
+- name: Apply Kyverno policies
+  ansible.builtin.include_tasks: policies.yml

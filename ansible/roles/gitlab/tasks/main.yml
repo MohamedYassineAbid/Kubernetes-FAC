@@ -1,0 +1,62 @@
+# Ensure python3-pip is installed
+- name: Install python3-pip if missing
+  apt:
+    name: python3-pip
+    state: present
+    update_cache: yes
+
+# Upgrade pip
+- name: Upgrade pip to latest version
+  pip:
+    name: pip
+    state: latest
+    executable: pip3
+
+# Install compatible Docker SDK
+- name: Install Python Docker SDK (pinned)
+  pip:
+    name: docker==6.1.3
+    executable: pip3
+    extra_args: "--break-system-packages"
+
+# Install compatible docker-compose module
+- name: Install Python docker-compose module (pinned)
+  pip:
+    name: docker-compose==1.29.2
+    executable: pip3
+    extra_args: "--break-system-packages"
+
+# Install requests with compatible version
+- name: Install compatible requests + urllib3
+  pip:
+    name:
+      - "requests==2.28.2"
+      - "urllib3==1.26.15"
+    executable: pip3
+    extra_args: "--break-system-packages"
+
+# Create GitLab data directories
+- name: Create GitLab data directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ gitlab.data_dir }}"
+    - "{{ gitlab.data_dir }}/config"
+    - "{{ gitlab.data_dir }}/logs"
+    - "{{ gitlab.data_dir }}/data"
+    - /opt/gitlab
+
+# Template docker-compose
+- name: Copy docker-compose file
+  template:
+    src: docker-compose.yml.j2
+    dest: /opt/gitlab/docker-compose.yml
+    mode: "0644"
+
+# Start GitLab
+- name: Start GitLab container
+  community.docker.docker_compose_v2:
+    project_src: /opt/gitlab
+    state: present

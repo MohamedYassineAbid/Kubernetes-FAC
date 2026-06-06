@@ -1,7 +1,6 @@
 ---
 - name: Get all pods status
-  become_user: vagrant
-  command: kubectl get pods --all-namespaces --no-headers
+  command: kubectl get pods --all-namespaces --no-headers --kubeconfig=/etc/kubernetes/admin.conf
   register: pods_status
   until: >-
     pods_status.stdout_lines | 

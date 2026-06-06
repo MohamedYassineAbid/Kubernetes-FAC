@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ traefik_namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ traefik_service_name }}
+  namespace: {{ traefik_namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ traefik_service_name }}-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "secrets", "nodes", "pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "ingressclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses/status"]
+    verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ traefik_service_name }}-binding
+subjects:
+  - kind: ServiceAccount
+    name: {{ traefik_service_name }}
+    namespace: {{ traefik_namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ traefik_service_name }}-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ traefik_service_name }}
+  namespace: {{ traefik_namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ traefik_service_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ traefik_service_name }}
+    spec:
+      serviceAccountName: {{ traefik_service_name }}
+      containers:
+        - name: traefik
+          image: {{ traefik_image }}
+          args:
+            - --api.dashboard=true
+            - --api.insecure=true
+            - --providers.kubernetesingress=true
+            - --entrypoints.web.address=:8000
+            - --entrypoints.websecure.address=:8443
+            - --entrypoints.traefik.address=:9000
+            - --entryPoints.web.forwardedHeaders.insecure=true
+            - --entryPoints.websecure.forwardedHeaders.insecure=true
+{% if traefik_servers_transport_insecure_skip_verify | bool %}
+            - --serversTransport.insecureSkipVerify=true
+{% endif %}
+{% if traefik_trusted_ips | length > 0 %}
+            - --entryPoints.web.forwardedHeaders.trustedIPs={{ traefik_trusted_ips | join(',') }}
+            - --entryPoints.websecure.forwardedHeaders.trustedIPs={{ traefik_trusted_ips | join(',') }}
+{% endif %}
+            - --accesslog=true
+            - --ping=true
+          ports:
+            - name: web
+              containerPort: 8000
+            - name: websecure
+              containerPort: 8443
+            - name: traefik
+              containerPort: 9000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ traefik_service_name }}
+  namespace: {{ traefik_namespace }}
+spec:
+  type: NodePort
+  selector:
+    app: {{ traefik_service_name }}
+  ports:
+{% if traefik_nodeport_http_enabled %}
+    - name: web
+      port: 80
+      targetPort: web
+      nodePort: {{ traefik_nodeport_http }}
+{% endif %}
+{% if traefik_nodeport_https_enabled %}
+    - name: websecure
+      port: 443
+      targetPort: websecure
+      nodePort: {{ traefik_nodeport_https }}
+{% endif %}
+---
+{% if traefik_dashboard_enabled %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ traefik_service_name }}-dashboard
+  namespace: {{ traefik_namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ traefik_service_name }}
+  ports:
+    - name: dashboard
+      port: 9000
+      targetPort: traefik
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ traefik_service_name }}-dashboard
+  namespace: {{ traefik_namespace }}
+spec:
+  ingressClassName: {{ traefik_ingress_class }}
+  rules:
+    - host: {{ traefik_dashboard_host }}
+      http:
+        paths:
+          - path: {{ traefik_dashboard_path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ traefik_service_name }}-dashboard
+                port:
+                  number: 9000
+---
+{% endif %}
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: {{ traefik_ingress_class }}
+spec:
+  controller: traefik.io/ingress-controller

@@ -1,0 +1,31 @@
+---
+- name: Ensure Python Docker library is installed
+  apt:
+    name: python3-docker
+    state: present
+    update_cache: yes
+
+- name: Create directory on the NFS path for persistent data
+  file:
+    path: "{{ gitea.data_path }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Deploy Gitea as a Docker container
+  community.docker.docker_container:
+    name: gitea
+    image: gitea/gitea:latest
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "3000:3000"
+      - "2224:22"
+    volumes:
+      - "{{ gitea.data_path }}:/data"
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
+    env:
+      USER_UID: "1000"
+      USER_GID: "1000"

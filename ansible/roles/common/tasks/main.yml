@@ -6,18 +6,12 @@
     apt update
   become: true
 
-- name: Add controlplane to /etc/hosts
+- name: Add all cluster nodes to /etc/hosts
   lineinfile:
     path: /etc/hosts
-    line: "{{ control_ip }} controlplane"
+    line: "{{ hostvars[item]['internal_ip'] }} {{ item }}"
     state: present
-
-- name: Add worker nodes to /etc/hosts
-  lineinfile:
-    path: /etc/hosts
-    line: "{{ ip_nw }}{{ ip_start + item | int }} node0{{ item }}"
-    state: present
-  loop: "{{ range(1, worker_count + 1) | list }}"
+  loop: "{{ groups['all'] | default(groups['k8s_cluster']) }}"
 
 - name: Create systemd-resolved config directory
   file:
@@ -155,13 +149,8 @@
     - kubectl
     - kubeadm
     - cri-o
-- name: Get eth1 IP address
-  shell: ip --json a s | jq -r '.[] | if .ifname == "eth1" then .addr_info[] | if .family == "inet" then .local else empty end else empty end'
-  register: node_ip
-  changed_when: false
-
 - name: Configure kubelet with node IP
   copy:
     dest: /etc/default/kubelet
     content: |
-      KUBELET_EXTRA_ARGS=--node-ip={{ node_ip.stdout }}
+      KUBELET_EXTRA_ARGS=--node-ip={{ internal_ip }}

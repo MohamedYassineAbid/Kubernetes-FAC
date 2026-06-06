@@ -49,3 +49,4 @@ vagrant up
 ```shell
 vagrant destroy -f
 
+ansible-playbook -i inventory.ini site.yml --tags "prometheus,grafana" --ask-vault-pass

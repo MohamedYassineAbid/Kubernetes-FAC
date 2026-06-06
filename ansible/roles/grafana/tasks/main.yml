@@ -1,0 +1,37 @@
+---
+- name: Add Grafana Helm repository
+  shell: helm repo add grafana https://grafana.github.io/helm-charts
+
+- name: Update Helm repositories
+  shell: helm repo update
+
+- name: Deploy Grafana with Traefik Ingress and Prometheus Data Source
+  shell: |
+    cat <<EOF > /tmp/grafana-values.yml
+    adminUser: {{ grafana_admin_user }}
+    adminPassword: {{ grafana_admin_password }}
+    persistence:
+      type: pvc
+      enabled: true
+      storageClassName: nfs
+      accessModes:
+        - ReadWriteOnce
+      size: 5Gi
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - {{ grafana_host }}
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-server.monitoring.svc.cluster.local
+          access: proxy
+          isDefault: true
+    EOF
+    helm upgrade --install grafana grafana/grafana \
+      --namespace monitoring \
+      -f /tmp/grafana-values.yml

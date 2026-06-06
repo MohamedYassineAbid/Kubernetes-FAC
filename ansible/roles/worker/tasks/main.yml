@@ -5,27 +5,26 @@
   register: kubelet_conf
 
 - name: Join the Kubernetes cluster
-  command: "{{ hostvars['controlplane']['kubeadm_join_command'] }}"
+  command: "{{ hostvars['controlplane']['kubeadm_join_command'] }} --node-name {{ inventory_hostname }}"
   when: not kubelet_conf.stat.exists
 
-- name: Create .kube directory for vagrant
+- name: Create .kube directory for {{ ansible_user }}
   file:
-    path: /home/vagrant/.kube
+    path: /home/{{ ansible_user }}/.kube
     state: directory
-    owner: vagrant
-    group: vagrant
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: "0755"
 
-- name: Copy admin.conf to vagrant kubeconfig
+- name: Copy admin.conf to {{ ansible_user }} kubeconfig
   copy:
     src: "{{ playbook_dir }}/fetched/admin.conf"
-    dest: /home/vagrant/.kube/config
-    owner: vagrant
-    group: vagrant
+    dest: /home/{{ ansible_user }}/.kube/config
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: "0644"
 
 - name: Label node as worker
-  become_user: vagrant
-  command: "kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite"
+  shell: "kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite --kubeconfig=/home/{{ ansible_user }}/.kube/config || kubectl label node $(hostname | tr 'A-Z' 'a-z') node-role.kubernetes.io/worker=worker --overwrite --kubeconfig=/home/{{ ansible_user }}/.kube/config"
   register: label_result
   changed_when: "'labeled' in label_result.stdout"

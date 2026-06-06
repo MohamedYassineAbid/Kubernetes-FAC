@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    restart: always
+    hostname: "{{ gitlab.ip }}"
+
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://{{ gitlab.ip }}'
+
+        registry_external_url 'http://{{ gitlab.ip }}:{{ gitlab.registry_port }}'
+        gitlab_rails['registry_enabled'] = true
+
+        puma['worker_processes'] = 2
+        puma['min_threads'] = 1
+        puma['max_threads'] = 4
+        sidekiq['concurrency'] = 5
+        postgresql['shared_buffers'] = "256MB"
+        postgresql['max_connections'] = 100
+        prometheus_monitoring['enable'] = false
+
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+
+    ports:
+      - "80:80"
+      - "2222:22"
+      - "{{ gitlab.registry_port }}:{{ gitlab.registry_port }}"
+
+    volumes:
+      - "{{ gitlab.data_dir }}/config:/etc/gitlab"
+      - "{{ gitlab.data_dir }}/logs:/var/log/gitlab"
+      - "{{ gitlab.data_dir }}/data:/var/opt/gitlab"
+
+    shm_size: "256m"

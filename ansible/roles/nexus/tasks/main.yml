@@ -1,0 +1,26 @@
+---
+- name: Ensure Python Docker library is installed
+  apt:
+    name: python3-docker
+    state: present
+    update_cache: yes
+
+- name: Create directory on the NFS path for persistent data
+  file:
+    path: "{{ nexus.data_path }}"
+    state: directory
+    owner: "200"
+    group: "200"
+    mode: "0755"
+
+- name: Deploy Nexus as a Docker container
+  community.docker.docker_container:
+    name: nexus
+    image: sonatype/nexus3:latest
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "8081:8081"
+      - "{{ nexus.registry_port }}:{{ nexus.registry_port }}"
+    volumes:
+      - "{{ nexus.data_path }}:/nexus-data"

@@ -12,8 +12,8 @@
 - name: Initialize the Kubernetes cluster
   command: >
     kubeadm init
-      --apiserver-advertise-address={{ control_ip }}
-      --apiserver-cert-extra-sans={{ control_ip }}
+      --apiserver-advertise-address={{ internal_ip }}
+      --apiserver-cert-extra-sans={{ internal_ip }}
       --pod-network-cidr={{ pod_cidr }}
       --service-cidr={{ service_cidr }}
       --node-name controlplane
@@ -36,22 +36,22 @@
     group: root
     mode: "0644"
 
-# ── kubeconfig for vagrant user ──────────────────────────────
-- name: Create .kube directory for vagrant
+# ── kubeconfig for {{ ansible_user }} user ──────────────────────────────
+- name: Create .kube directory for {{ ansible_user }}
   file:
-    path: /home/vagrant/.kube
+    path: /home/{{ ansible_user }}/.kube
     state: directory
-    owner: vagrant
-    group: vagrant
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: "0755"
 
-- name: Copy admin.conf to vagrant kubeconfig
+- name: Copy admin.conf to {{ ansible_user }} kubeconfig
   copy:
     src: /etc/kubernetes/admin.conf
-    dest: /home/vagrant/.kube/config
+    dest: /home/{{ ansible_user }}/.kube/config
     remote_src: true
-    owner: vagrant
-    group: vagrant
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: "0644"
 
 # ── Ensure Calico CNI directory ──────────────────────────────
@@ -68,14 +68,12 @@
     dest: /tmp/calico.yaml
 
 - name: Apply Calico manifest
-  become_user: vagrant
-  command: kubectl apply -f /tmp/calico.yaml
+  command: kubectl apply -f /tmp/calico.yaml --kubeconfig=/etc/kubernetes/admin.conf
   register: calico_result
   changed_when: "'created' in calico_result.stdout or 'configured' in calico_result.stdout"
 
 - name: Apply Metrics Server manifest
-  become_user: vagrant
-  command: kubectl apply -f https://raw.githubusercontent.com/techiescamp/kubeadm-scripts/main/manifests/metrics-server.yaml
+  command: kubectl apply -f https://raw.githubusercontent.com/techiescamp/kubeadm-scripts/main/manifests/metrics-server.yaml --kubeconfig=/etc/kubernetes/admin.conf
   register: metrics_result
   changed_when: "'created' in metrics_result.stdout or 'configured' in metrics_result.stdout"
 

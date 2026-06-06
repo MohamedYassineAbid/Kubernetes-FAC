@@ -1,0 +1,50 @@
+---
+- name: Validate role is enabled
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    quiet: true
+  tags: [always]
+
+- name: Validate Traefik NodePort values
+  ansible.builtin.assert:
+    that:
+      - not traefik_nodeport_http_enabled or (traefik_nodeport_http | int >= 30000 and traefik_nodeport_http | int <= 32767)
+      - not traefik_nodeport_https_enabled or (traefik_nodeport_https | int >= 30000 and traefik_nodeport_https | int <= 32767)
+    fail_msg: "Traefik NodePort must be between 30000 and 32767"
+  tags: [setup, ingress]
+
+- name: Check kubeconfig presence
+  ansible.builtin.stat:
+    path: "{{ kubeconfig_path }}"
+  register: kubeconfig_stat
+  tags: [setup, ingress]
+
+- name: Ensure kubeconfig exists before applying Traefik
+  ansible.builtin.assert:
+    that:
+      - kubeconfig_stat.stat.exists
+    fail_msg: "kubeconfig not found at {{ kubeconfig_path }}"
+  tags: [setup, ingress]
+
+- name: Render Traefik manifest
+  ansible.builtin.template:
+    src: traefik.yaml.j2
+    dest: /tmp/traefik-ingress.yaml
+    mode: "0644"
+  tags: [setup, ingress]
+
+- name: Apply Traefik manifest
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f /tmp/traefik-ingress.yaml
+  register: traefik_apply
+  changed_when: "'created' in traefik_apply.stdout or 'configured' in traefik_apply.stdout"
+  tags: [setup, ingress]
+
+- name: Wait for Traefik deployment rollout
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ traefik_namespace }}
+    rollout status deployment/{{ traefik_service_name }} --timeout=240s
+  register: traefik_rollout
+  changed_when: false
+  tags: [setup, ingress]

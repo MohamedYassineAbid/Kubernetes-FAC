@@ -30,7 +30,7 @@
   hosts: all
   become: true
   roles:
-    -  { role: helm, tags: ["deploy_helm"] }
+    -  { role: helm, tags: ["helm"] }
 
 
 - name: Docker and nfs configuration
@@ -39,8 +39,73 @@
   roles:
     - { role: Docker_NFS, tags: ["dockernfs"] }
   
-- name: harbor installation
+- name: jenkins installation
+  hosts: controlplane
+  become: true
+  roles:
+    - { role: jenkins, tags: ["jenkins"] }
+
+- name: gitlab installation
+  hosts: services
+  become: true
+  roles:
+    - { role: gitlab, tags: ["gitlab"] }
+
+
+- name: Container Insecure Registry setup (Docker & CRI-O)
+  hosts: all
+  become: true
+  roles:
+    - { role: docker_insecure_registry, tags: ["insecure", "nexus"] }
+
+- name: Nexus installation
+  hosts: services
+  become: true
+  roles:
+    - { role: nexus, tags: ["nexus"] }
+
+
+
+- name: Gitea installation
+  hosts: services
+  become: true
+  roles:
+    - { role: gitea, tags: ["gitea"] }
+
+- name: Harbor installation
   hosts: services
   become: true
   roles:
     - { role: harbor, tags: ["harbor"] }
+
+
+- name: keyverno installation & config
+  hosts: controlplane
+  become: true
+  roles:
+    - { role: keyverno, tags: ["kyverno"] }
+
+
+- name: Traefik ingress installation
+  hosts: controlplane
+  become: true
+  roles:
+    - { role: traefik, tags: ["traefik"] }
+
+- name: Prometheus installation
+  hosts: controlplane
+  become: true
+  roles:
+    - { role: prometheus, tags: ["prometheus"] }
+
+- name: Grafana installation
+  hosts: controlplane
+  become: true
+  roles:
+    - { role: grafana, tags: ["grafana"] }
+
+- name: MySQL installation
+  hosts: controlplane
+  become: true
+  roles:
+    - { role: mysql, tags: ["mysql"] }  
