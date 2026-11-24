@@ -28,16 +28,44 @@
     path: /etc/kubernetes/encryption/config.yaml
   register: encryption_config
 
-# The key is generated on the control plane and never leaves it.
-# Never regenerate it for a running cluster: existing Secrets would become unreadable.
+- name: Check for a host-side etcd encryption key backup
+  stat:
+    path: "{{ playbook_dir }}/fetched/kubernetes/etcd-encryption-key.b64"
+  register: etcd_encryption_key_backup
+  delegate_to: localhost
+  become: false
+
+- name: Read the host-side etcd encryption key for a rebuilt control plane
+  slurp:
+    src: "{{ playbook_dir }}/fetched/kubernetes/etcd-encryption-key.b64"
+  register: etcd_encryption_key_backup_raw
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: not encryption_config.stat.exists and etcd_encryption_key_backup.stat.exists
+
+- name: Reuse the backed-up etcd encryption key
+  set_fact:
+    etcd_encryption_key_value: "{{ etcd_encryption_key_backup_raw.content | b64decode | trim }}"
+  no_log: true
+  when: not encryption_config.stat.exists and etcd_encryption_key_backup.stat.exists
+
+# The key is generated on the control plane and only copied to a protected local backup.
+# Never regenerate it for an existing etcd data set: encrypted Secrets would become unreadable.
 - name: Generate etcd encryption key
   shell: set -o pipefail && head -c 32 /dev/urandom | base64 -w0
   args:
     executable: /bin/bash
-  register: etcd_encryption_key
+  register: etcd_encryption_key_generated
   changed_when: true
   no_log: true
-  when: not encryption_config.stat.exists
+  when: not encryption_config.stat.exists and not etcd_encryption_key_backup.stat.exists
+
+- name: Set the generated etcd encryption key
+  set_fact:
+    etcd_encryption_key_value: "{{ etcd_encryption_key_generated.stdout }}"
+  no_log: true
+  when: not encryption_config.stat.exists and not etcd_encryption_key_backup.stat.exists
 
 - name: Write etcd encryption config
   template:
@@ -48,6 +76,32 @@
     mode: "0600"
   no_log: true
   when: not encryption_config.stat.exists
+
+# Keep a protected host-side copy with the fetched kubeconfig. An etcd snapshot
+# cannot be restored without this key. The remote config remains the source of
+# truth so this also repairs a missing local backup on later playbook runs.
+- name: Read the active etcd encryption configuration
+  slurp:
+    src: /etc/kubernetes/encryption/config.yaml
+  register: etcd_encryption_config_raw
+  no_log: true
+
+- name: Create local Kubernetes recovery directory
+  file:
+    path: "{{ playbook_dir }}/fetched/kubernetes"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Back up the active etcd encryption key locally
+  copy:
+    dest: "{{ playbook_dir }}/fetched/kubernetes/etcd-encryption-key.b64"
+    content: "{{ (etcd_encryption_config_raw.content | b64decode | from_yaml).resources[0].providers[0].secret }}\n"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  no_log: true
 
 - name: Write API server audit policy
   template:

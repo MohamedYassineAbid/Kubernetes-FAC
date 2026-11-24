@@ -127,7 +127,7 @@ docker push 192.168.56.80:8880/library/myimage:latest
 
 **Default Configuration:**
 - Export Path: `/srv/nfs/k8s`
-- Clients: Only cluster node IPs (10.0.0.11, 10.0.0.12, etc.)
+- Clients: Only cluster node IPs (the Kubernetes node IPs defined in `ansible/inventories/lab/hosts.yml`)
 - Options: `rw,sync,no_subtree_check,no_root_squash`
 
 **Configuration Options:**

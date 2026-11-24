@@ -15,12 +15,13 @@
           - storage_backend != 'nfs' or (services_vm_enabled | bool)
           - not (deploy_jenkins | bool) or (deploy_storage | bool and deploy_secrets | bool)
           - not (deploy_monitoring | bool) or (deploy_storage | bool and deploy_secrets | bool)
+          - not (deploy_monitoring | bool) or (deploy_traefik | bool)
           - not (deploy_mysql | bool) or (deploy_storage | bool and deploy_secrets | bool)
           - not (deploy_traefik | bool) or (deploy_secrets | bool)
           - not (services_vm_enabled | bool) or (deploy_secrets | bool)
         fail_msg: >-
           A switch in hosts.yml needs another one turned on: jenkins, monitoring and mysql
-          need storage and secrets; traefik and the services VM need secrets;
+          need storage, secrets and Traefik; traefik and the services VM need secrets;
           storage_backend must be longhorn, local-path or nfs, and nfs needs services_vm_enabled.
         quiet: true
 

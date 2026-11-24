@@ -9,6 +9,10 @@ argument_specs:
         type: str
         required: true
         description: Release
+      harbor_installer_sha256:
+        type: str
+        required: true
+        description: SHA-256 of the online installer archive
       harbor_install_dir:
         type: str
         required: true

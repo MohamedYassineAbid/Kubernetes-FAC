@@ -110,7 +110,7 @@
 
 - name: Install CRI-O
   apt:
-    name: cri-o
+    name: "cri-o={{ cri_o_version }}"
     state: present
     update_cache: true
 

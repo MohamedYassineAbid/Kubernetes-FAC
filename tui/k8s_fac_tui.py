@@ -19,11 +19,13 @@ from textual.binding import Binding
 from textual.reactive import reactive
 
 
-# Paths relative to the tui directory
+# Paths relative to the selected inventory environment.
 BASE_DIR = Path(__file__).parent.parent
 ANSIBLE_DIR = BASE_DIR / "ansible"
-INVENTORY_FILE = ANSIBLE_DIR / "inventories/lab/hosts.yml"
-MAIN_VARS_FILE = ANSIBLE_DIR / "inventories/lab/group_vars/all/main.yml"
+ENVIRONMENT = os.environ.get("KFAC_ENV", "lab")
+INVENTORY_DIR = ANSIBLE_DIR / "inventories" / ENVIRONMENT
+INVENTORY_FILE = INVENTORY_DIR / "hosts.yml"
+MAIN_VARS_FILE = INVENTORY_DIR / "group_vars/all/main.yml"
 
 # Service role defaults
 SERVICE_DEFAULTS = {
@@ -144,6 +146,15 @@ class ConfigPanel(VerticalScroll):
                 value=self.config.hosts_data['all']['vars'].get('private_network_cidr', '192.168.56.0/24'),
                 placeholder="192.168.56.0/24",
                 id="network_cidr"
+            ),
+            classes="config-row"
+        )
+        yield Horizontal(
+            Label("Storage backend:", classes="label"),
+            Input(
+                value=self.config.hosts_data['all']['vars'].get('storage_backend', 'local-path'),
+                placeholder="local-path, longhorn, or nfs",
+                id="storage_backend"
             ),
             classes="config-row"
         )
@@ -511,7 +522,7 @@ class KubernetesFACTUI(App):
     def on_mount(self) -> None:
         """Called when app starts"""
         self.title = "Kubernetes-FAC Cluster Manager"
-        self.sub_title = f"Environment: lab | Path: {BASE_DIR}"
+        self.sub_title = f"Environment: {ENVIRONMENT} | Path: {BASE_DIR}"
     
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button clicks"""
@@ -541,6 +552,8 @@ class KubernetesFACTUI(App):
         # Update network CIDR
         network_input = self.query_one("#network_cidr", Input)
         config.hosts_data['all']['vars']['private_network_cidr'] = network_input.value
+        storage_backend_input = self.query_one("#storage_backend", Input)
+        config.hosts_data['all']['vars']['storage_backend'] = storage_backend_input.value.strip()
         
         # Update node IPs
         for node in ["controlplane", "node01", "node02"]:
@@ -565,96 +578,39 @@ class KubernetesFACTUI(App):
     
     async def reload_configuration(self):
         """Reload configuration from files"""
+        config = ClusterConfig()
+        self.query_one("#network_cidr", Input).value = str(config.hosts_data['all']['vars'].get('private_network_cidr', ''))
+        self.query_one("#storage_backend", Input).value = str(config.hosts_data['all']['vars'].get('storage_backend', 'local-path'))
+        for node in ["controlplane", "node01", "node02"]:
+            self.query_one(f"#ip_{node}", Input).value = config.get_node_ip(node)
+        for switch in ["services_vm_enabled", "deploy_secrets", "deploy_storage", "deploy_kyverno", "deploy_traefik", "deploy_jenkins", "deploy_monitoring", "deploy_mysql"]:
+            self.query_one(f"#{switch}", Switch).value = config.get_deploy_switch(switch)
         self.notify("Configuration reloaded from files")
-        # Would need to rebuild the panel to show new values
-        # For now, just notify - full implementation would require panel refresh
     
     async def save_services_configuration(self):
         """Save services configuration from UI to YAML files"""
         config = ClusterConfig()
-        
-        # GitLab settings
-        gitlab_fields = [
-            ('gitlab_http_port', int),
-            ('gitlab_ssh_port', int),
-            ('gitlab_registry_port', int),
-            ('gitlab_data_dir', str),
-            ('gitlab_puma_workers', int),
-        ]
-        
-        for field, field_type in gitlab_fields:
-            try:
-                widget = self.query_one(f"#{field}", Input)
-                value = field_type(widget.value) if widget.value else None
-                if value is not None:
-                    if 'gitlab' not in config.service_configs:
-                        config.service_configs['gitlab'] = {}
-                    config.service_configs['gitlab'][field] = value
-            except Exception:
-                pass
-        
-        # Nexus settings
-        nexus_fields = [
-            ('nexus_http_port', int),
-            ('nexus_data_path', str),
-        ]
-        
-        for field, field_type in nexus_fields:
-            try:
-                widget = self.query_one(f"#{field}", Input)
-                value = field_type(widget.value) if widget.value else None
-                if value is not None:
-                    if 'nexus' not in config.service_configs:
-                        config.service_configs['nexus'] = {}
-                    config.service_configs['nexus'][field] = value
-            except Exception:
-                pass
-        
-        # Gitea settings
-        gitea_fields = [
-            ('gitea_http_port', int),
-            ('gitea_ssh_port', int),
-            ('gitea_data_path', str),
-        ]
-        
-        for field, field_type in gitea_fields:
-            try:
-                widget = self.query_one(f"#{field}", Input)
-                value = field_type(widget.value) if widget.value else None
-                if value is not None:
-                    if 'gitea' not in config.service_configs:
-                        config.service_configs['gitea'] = {}
-                    config.service_configs['gitea'][field] = value
-            except Exception:
-                pass
-        
-        # Harbor settings
-        harbor_fields = [
-            ('harbor_http_port', int),
-            ('harbor_install_dir', str),
-            ('harbor_data_volume', str),
-        ]
-        
-        for field, field_type in harbor_fields:
-            try:
-                widget = self.query_one(f"#{field}", Input)
-                value = field_type(widget.value) if widget.value else None
-                if value is not None:
-                    if 'harbor' not in config.service_configs:
-                        config.service_configs['harbor'] = {}
-                    config.service_configs['harbor'][field] = value
-            except Exception:
-                pass
-        
-        # NFS path (goes to main.yml, not service defaults)
+        fields = {
+            'gitlab': [('gitlab_http_port', int), ('gitlab_ssh_port', int), ('gitlab_registry_port', int), ('gitlab_data_dir', str), ('gitlab_puma_workers', int)],
+            'nexus': [('nexus_http_port', int), ('nexus_data_path', str)],
+            'gitea': [('gitea_http_port', int), ('gitea_ssh_port', int), ('gitea_data_path', str)],
+            'harbor': [('harbor_http_port', int), ('harbor_install_dir', str), ('harbor_data_volume', str)],
+        }
         try:
-            nfs_input = self.query_one("#nfs_path", Input)
-            if nfs_input.value:
-                config.vars_data['nfs_path'] = nfs_input.value
-                config.save_vars()
-        except Exception:
-            pass
-        
+            for service, service_fields in fields.items():
+                values = config.service_configs.setdefault(service, {})
+                for field, field_type in service_fields:
+                    raw_value = self.query_one(f"#{field}", Input).value.strip()
+                    if raw_value:
+                        values[field] = field_type(raw_value)
+            nfs_path = self.query_one("#nfs_path", Input).value.strip()
+            if nfs_path:
+                config.vars_data['nfs_path'] = nfs_path
+        except (ValueError, KeyError) as error:
+            self.query_one("#services_status", Static).update(f"❌ Invalid setting: {error}")
+            return
+
+        config.save_vars()
         # Save all service configs
         for service in ['gitlab', 'nexus', 'gitea', 'harbor']:
             config.save_service_config(service)
@@ -665,6 +621,19 @@ class KubernetesFACTUI(App):
     
     async def reload_services_configuration(self):
         """Reload services configuration from files"""
+        config = ClusterConfig()
+        fields = {
+            'gitlab': ['gitlab_http_port', 'gitlab_ssh_port', 'gitlab_registry_port', 'gitlab_data_dir', 'gitlab_puma_workers'],
+            'nexus': ['nexus_http_port', 'nexus_data_path'],
+            'gitea': ['gitea_http_port', 'gitea_ssh_port', 'gitea_data_path'],
+            'harbor': ['harbor_http_port', 'harbor_install_dir', 'harbor_data_volume'],
+        }
+        for service, names in fields.items():
+            values = config.service_configs.get(service, {})
+            for name in names:
+                if name in values:
+                    self.query_one(f"#{name}", Input).value = str(values[name])
+        self.query_one("#nfs_path", Input).value = str(config.vars_data.get('nfs_path', ''))
         self.notify("Services configuration reloaded from files")
     
     async def run_command(self, command_type: str):
@@ -679,7 +648,7 @@ class KubernetesFACTUI(App):
                 "desc": "Starting Vagrant VMs..."
             },
             "ansible_deploy": {
-                "cmd": "ansible-playbook site.yml",
+                "cmd": f"ansible-playbook -i inventories/{ENVIRONMENT}/hosts.yml site.yml",
                 "cwd": ANSIBLE_DIR,
                 "desc": "Running Ansible playbook..."
             },
@@ -703,7 +672,8 @@ class KubernetesFACTUI(App):
                 cmd_info['cmd'],
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
-                cwd=cmd_info['cwd']
+                cwd=cmd_info['cwd'],
+                env={**os.environ, "KFAC_ENV": ENVIRONMENT}
             )
             
             while True:
@@ -739,7 +709,8 @@ class KubernetesFACTUI(App):
                 ["vagrant", "status"],
                 cwd=BASE_DIR,
                 capture_output=True,
-                text=True
+                text=True,
+                env={**os.environ, "KFAC_ENV": ENVIRONMENT}
             )
             
             # Parse vagrant status output

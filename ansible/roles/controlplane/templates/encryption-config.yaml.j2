@@ -7,6 +7,6 @@ resources:
       - secretbox:
           keys:
             - name: key1
-              secret: "{{ etcd_encryption_key.stdout }}"
+              secret: "{{ etcd_encryption_key_value }}"
       # identity last: lets the API server still read anything written unencrypted
       - identity: {}

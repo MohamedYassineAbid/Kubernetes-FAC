@@ -23,6 +23,11 @@ A beautiful terminal interface for managing your Kubernetes cluster deployment.
    python k8s_fac_tui.py
    ```
 
+Set `KFAC_ENV` to select another inventory (defaults to `lab`), for example:
+```bash
+KFAC_ENV=lab python k8s_fac_tui.py
+```
+
    Or make it executable:
    ```bash
    chmod +x k8s_fac_tui.py
@@ -70,7 +75,7 @@ A beautiful terminal interface for managing your Kubernetes cluster deployment.
 
 The TUI is a thin wrapper around the existing Vagrant/Ansible setup:
 
-- Reads/writes `ansible/inventories/lab/hosts.yml`
+- Reads/writes `ansible/inventories/$KFAC_ENV/hosts.yml` (defaults to `lab`)
 - Executes shell commands (`vagrant`, `ansible-playbook`, `kubectl`)
 - Streams command output in real-time using async subprocess
 - Parses status from command outputs

@@ -7,6 +7,7 @@
 # CRI-O minor must match the Kubernetes minor (common role uses kubernetes_version_short).
 kubernetes_version: "1.36.6-*"
 kubernetes_version_short: "1.36"
+cri_o_version: "1.36.6-1"
 calico_version: "3.33.0"            # tested against k8s 1.35–1.37
 helm_version: "v3.22.1"
 openbao_version: "2.7.2"            # secrets VM (Debian package, checksum-verified)
@@ -31,4 +32,5 @@ mysql_image: "mysql:8.4.13"                 # 8.0 went EOL April 2026; 8.4 is LT
 gitlab_image: "gitlab/gitlab-ce:19.5.3-ce.0"
 nexus_image: "sonatype/nexus3:3.98.1"
 gitea_image: "gitea/gitea:28.3.0"
-harbor_version: "v2.14.2"
+harbor_version: "v2.14.6"
+harbor_installer_sha256: "64b22fe32364a34345fa9edd30e5acfddcb59a8ff56603fc8ef23293deacbed9"

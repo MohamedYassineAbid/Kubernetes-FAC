@@ -72,7 +72,7 @@ NFS:
   Export Path: /srv/nfs/k8s
 ```
 
-**Resources:** ~15GB RAM (5 VMs)
+**Resources:** about 13GB RAM (5 VMs at the inventory defaults)
 
 **Access:**
 - GitLab: http://192.168.56.80
@@ -119,7 +119,7 @@ NFS:
 # GitLab/Nexus/Harbor can be left at defaults (won't be deployed)
 ```
 
-**Resources:** ~12GB RAM (5 VMs)
+**Resources:** about 13GB RAM (5 VMs at the inventory defaults; increase worker RAM if using Longhorn)
 
 **Why this setup:**
 - Gitea is much lighter than GitLab (~50MB vs 2GB RAM)
@@ -129,9 +129,9 @@ NFS:
 
 ---
 
-## Harbor-Only (Secure Registry)
+## Services VM with Harbor Configuration
 
-**Use case:** Production-grade container registry with vulnerability scanning
+**Use case:** Configure Harbor on the Services VM. Enabling `services_vm_enabled` also deploys GitLab, Gitea, and Nexus in this repository.
 
 ### Configuration Tab
 ```
@@ -162,7 +162,7 @@ Harbor:
 # Other services left at defaults (won't deploy)
 ```
 
-**Resources:** ~11GB RAM (5 VMs)
+**Resources:** about 13GB RAM (5 VMs at the inventory defaults)
 
 **Features:**
 - Secure container registry

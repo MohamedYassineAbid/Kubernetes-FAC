@@ -12,6 +12,7 @@
   get_url:
     url: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-online-installer-{{ harbor_version }}.tgz"
     dest: "/tmp/harbor-online-installer-{{ harbor_version }}.tgz"
+    checksum: "sha256:{{ harbor_installer_sha256 }}"
     mode: '0644'
 
 - name: Extract Harbor archive
