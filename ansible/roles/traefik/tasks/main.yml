@@ -1,11 +1,4 @@
 ---
-- name: Validate role is enabled
-  ansible.builtin.assert:
-    that:
-      - role_enabled | bool
-    quiet: true
-  tags: [always]
-
 - name: Validate Traefik NodePort values
   ansible.builtin.assert:
     that:
@@ -27,24 +20,41 @@
     fail_msg: "kubeconfig not found at {{ kubeconfig_path }}"
   tags: [setup, ingress]
 
-- name: Render Traefik manifest
-  ansible.builtin.template:
-    src: traefik.yaml.j2
-    dest: /tmp/traefik-ingress.yaml
-    mode: "0644"
+- name: Read the dashboard password from OpenBao
+  ansible.builtin.include_role:
+    name: openbao_server
+    tasks_from: read
+  vars:
+    ob_path: bootstrap/traefik
+    ob_field: dashboard-password
+    ob_fact: traefik_dashboard_password
+  when: traefik_dashboard_enabled | bool
+  tags: [setup, ingress]
+
+- name: Require a dashboard password when the dashboard is enabled
+  ansible.builtin.assert:
+    that:
+      - traefik_dashboard_password | length >= 12
+    fail_msg: >-
+      The Traefik dashboard password read from OpenBao (kv/bootstrap/traefik) is missing
+      or shorter than 12 characters. Re-run with deploy_secrets: true, or set
+      traefik_dashboard_enabled: false.
+    quiet: true
+  when: traefik_dashboard_enabled | bool
   tags: [setup, ingress]
 
 - name: Apply Traefik manifest
-  ansible.builtin.command: >
-    kubectl --kubeconfig={{ kubeconfig_path }} apply -f /tmp/traefik-ingress.yaml
-  register: traefik_apply
-  changed_when: "'created' in traefik_apply.stdout or 'configured' in traefik_apply.stdout"
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: "{{ lookup('template', 'traefik.yaml.j2') | from_yaml_all | select | list }}"
+  no_log: true
   tags: [setup, ingress]
 
 - name: Wait for Traefik deployment rollout
   ansible.builtin.command: >
     kubectl --kubeconfig={{ kubeconfig_path }} -n {{ traefik_namespace }}
-    rollout status deployment/{{ traefik_service_name }} --timeout=240s
+    rollout status deployment/{{ traefik_service_name }} --timeout={{ traefik_rollout_timeout }}
   register: traefik_rollout
   changed_when: false
   tags: [setup, ingress]

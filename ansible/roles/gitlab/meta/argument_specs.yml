@@ -1,0 +1,51 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: GitLab CE on the services VM
+    options:
+      gitlab_image:
+        type: str
+        required: true
+        description: Image
+      gitlab_external_host:
+        type: str
+        required: true
+        description: External host/IP
+      gitlab_http_port:
+        type: int
+        required: true
+        description: HTTP port
+      gitlab_ssh_port:
+        type: int
+        required: true
+        description: SSH port
+      gitlab_registry_port:
+        type: int
+        required: true
+        description: Registry port
+      gitlab_data_dir:
+        type: str
+        required: true
+        description: Data dir
+      gitlab_compose_dir:
+        type: str
+        required: true
+        description: Compose project dir
+      gitlab_puma_workers:
+        type: int
+        required: true
+        description: Puma workers
+      gitlab_sidekiq_concurrency:
+        type: int
+        required: true
+        description: Sidekiq concurrency
+      gitlab_postgres_shared_buffers:
+        type: str
+        required: true
+        description: Postgres shared_buffers
+      gitlab_shm_size:
+        type: str
+        required: true
+        description: Container shm size

@@ -1,83 +1,72 @@
 ---
 - name: Add Jenkins Helm repo
-  ansible.builtin.command: helm repo add jenkins https://charts.jenkins.io
-  changed_when: false
-
-- name: Add NFS provisioner Helm repo
-  ansible.builtin.command: helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
-  changed_when: false
-
-- name: Update Helm repos
-  ansible.builtin.command: helm repo update
-  changed_when: false
+  kubernetes.core.helm_repository:
+    name: jenkins
+    repo_url: https://charts.jenkins.io
 
 - name: Create Jenkins namespace
   kubernetes.core.k8s:
     state: present
+    kubeconfig: "{{ kubeconfig_path }}"
     definition:
       apiVersion: v1
       kind: Namespace
       metadata:
-        name: "{{ jenkins.namespace }}"
+        name: "{{ jenkins_namespace }}"
         labels:
           app: jenkins
           team: devops
 
-- name: Deploy NFS provisioner
-  ansible.builtin.command: >
-    helm upgrade --install nfs-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner
-    --namespace {{ jenkins.namespace }}
-    --set nfs.server={{ nfs.server }}
-    --set nfs.path={{ nfs.path }}
-    --set storageClass.name=nfs
-    --set storageClass.defaultClass=true
-    --set storageClass.mountOptions[0]=nfsvers=3
-    --set storageClass.mountOptions[1]=nolock
-    --set storageClass.mountOptions[2]=noatime
-    --wait --timeout 60s
-  changed_when: true
+# Admin credentials come from OpenBao (apps/jenkins), never from Ansible
+- name: Sync Jenkins admin credentials from OpenBao
+  ansible.builtin.include_role:
+    name: external_secrets
+    tasks_from: sync
+  vars:
+    es_name: "{{ jenkins_admin_secret_name }}"
+    es_namespace: "{{ jenkins_namespace }}"
+    es_path: apps/jenkins
+    es_properties: { jenkins-admin-password: admin-password }
+    es_static: { jenkins-admin-user: "{{ jenkins_admin_user }}" }
 
 - name: Deploy Jenkins via Helm
-  ansible.builtin.command: >
-    helm upgrade --install jenkins jenkins/jenkins
-    --namespace {{ jenkins.namespace }}
-    --set controller.serviceType=NodePort
-    --set controller.nodePort={{ jenkins.node_port | default(32000) }}
-    --set controller.admin.username={{ jenkins.admin_user | default('admin') }}
-    --set controller.admin.password={{ jenkins.admin_password }}
-    --set persistence.enabled=true
-    --set persistence.size={{ jenkins.storage | default('10Gi') }}
-    --set persistence.storageClass=nfs
-    --set controller.podSecurityContextOverride.runAsUser=0
-    --set controller.podSecurityContextOverride.runAsGroup=0
-    --set controller.resources.requests.cpu=50m
-    --set controller.resources.requests.memory=256Mi
-    --set controller.resources.limits.cpu=500m
-    --set controller.resources.limits.memory=1Gi
-    --set controller.sidecars.configAutoReload.resources.requests.cpu=50m
-    --set controller.sidecars.configAutoReload.resources.requests.memory=64Mi
-    --set controller.sidecars.configAutoReload.resources.limits.cpu=100m
-    --set controller.sidecars.configAutoReload.resources.limits.memory=256Mi
-    --set controller.initContainerResources.requests.cpu=50m
-    --set controller.initContainerResources.requests.memory=512Mi
-    --set controller.initContainerResources.limits.cpu=200m
-    --set controller.initContainerResources.limits.memory=1Gi
-    --set controller.initContainerEnv[0].name=JAVA_OPTS
-    --set controller.initContainerEnv[0].value="-Xmx700m -Xms512m"
-    --wait --timeout {{ jenkins.wait_timeout | default('500s') }}
-  changed_when: true
-
-- name: Get initial admin password
-  ansible.builtin.command: >
-    kubectl exec -n {{ jenkins.namespace }} svc/jenkins -c jenkins --
-    /bin/sh -c 'cat /run/secrets/additional/chart-admin-password'
-  register: jenkins_password
-  changed_when: false
-  ignore_errors: true
+  kubernetes.core.helm:
+    name: jenkins
+    chart_ref: jenkins/jenkins
+    chart_version: "{{ jenkins_chart_version }}"
+    release_namespace: "{{ jenkins_namespace }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    update_repo_cache: true
+    wait: true
+    wait_timeout: "{{ jenkins_wait_timeout }}"
+    values:
+      persistence:
+        enabled: true
+        size: "{{ jenkins_storage_size }}"
+        storageClass: "{{ storage_class_name }}"
+      controller:
+        serviceType: NodePort
+        nodePort: "{{ jenkins_node_port }}"
+        admin:
+          createSecret: false
+          existingSecret: "{{ jenkins_admin_secret_name }}"
+          userKey: jenkins-admin-user
+          passwordKey: jenkins-admin-password
+        podSecurityContextOverride:
+          runAsUser: 0
+          runAsGroup: 0
+        resources: "{{ jenkins_controller_resources }}"
+        sidecars:
+          configAutoReload:
+            resources: "{{ jenkins_reload_sidecar_resources }}"
+        initContainerResources: "{{ jenkins_init_resources }}"
+        initContainerEnv:
+          - name: JAVA_OPTS
+            value: "{{ jenkins_java_opts }}"
 
 - name: Print Jenkins access info
   ansible.builtin.debug:
     msg:
-      - "Jenkins URL : http://<node-ip>:{{ jenkins.node_port | default(32000) }}"
-      - "Login       : {{ jenkins.admin_user | default('admin') }}"
-      - "Password    : {{ jenkins_password.stdout | default('kubectl get secret -n ' + jenkins.namespace + ' jenkins -o jsonpath={.data.jenkins-admin-password} | base64 -d') }}"
+      - "Jenkins URL : http://{{ control_plane_ip }}:{{ jenkins_node_port }}"
+      - "Login       : {{ jenkins_admin_user }}"
+      - "Password    : stored in OpenBao at {{ openbao_kv_mount }}/apps/jenkins (admin-password)"

@@ -1,0 +1,73 @@
+---
+- name: Set OpenBao API address (local, TLS-verified)
+  ansible.builtin.set_fact:
+    openbao_api: "https://127.0.0.1:{{ openbao_api_port }}"
+    openbao_ca: "{{ openbao_tls_dir }}/ca.crt"
+
+- name: Wait for the OpenBao API
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200"
+    ca_path: "{{ openbao_ca }}"
+    return_content: true
+  register: openbao_health
+  until: openbao_health.status == 200
+  retries: "{{ openbao_ready_retries }}"
+  delay: 5
+
+- name: Initialise OpenBao (first run only)
+  when: not openbao_health.json.initialized
+  block:
+    - name: Initialise (static seal -> one recovery key)
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/sys/init"
+        ca_path: "{{ openbao_ca }}"
+        method: PUT
+        body_format: json
+        body: { recovery_shares: 1, recovery_threshold: 1 }
+        return_content: true
+      register: openbao_init
+      no_log: true
+
+    - name: Save root token and recovery key (root-only)
+      ansible.builtin.copy:
+        dest: "{{ openbao_init_file }}"
+        content: "{{ openbao_init.json | to_nice_json }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+- name: Wait for OpenBao to auto-unseal
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200"
+    ca_path: "{{ openbao_ca }}"
+    return_content: true
+  register: openbao_health
+  until: openbao_health.status == 200 and openbao_health.json.initialized and not openbao_health.json.sealed
+  retries: "{{ openbao_ready_retries }}"
+  delay: 3
+
+- name: Fetch the break-glass file to the Ansible host (git-ignored)
+  ansible.builtin.fetch:
+    src: "{{ openbao_init_file }}"
+    dest: "{{ openbao_local_dir }}/init.json"
+    flat: true
+
+- name: Restrict the local break-glass file
+  ansible.builtin.file:
+    path: "{{ openbao_local_dir }}/init.json"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Read the root token (used only on this VM)
+  ansible.builtin.slurp:
+    src: "{{ openbao_init_file }}"
+  register: openbao_init_raw
+  no_log: true
+
+- name: Set OpenBao request headers
+  ansible.builtin.set_fact:
+    openbao_headers:
+      X-Vault-Token: "{{ (openbao_init_raw.content | b64decode | from_json).root_token }}"
+  no_log: true

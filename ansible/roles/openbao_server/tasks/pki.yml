@@ -1,0 +1,85 @@
+---
+# A small private CA on the Ansible host (git-ignored). It signs the OpenBao
+# server certificate; External Secrets and Ansible trust only this CA.
+- name: Create local PKI directory
+  ansible.builtin.file:
+    path: "{{ openbao_pki_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Create CA key
+  community.crypto.openssl_privatekey:
+    path: "{{ openbao_pki_dir }}/ca.key"
+    type: ECC
+    curve: secp384r1
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Create CA signing request
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ openbao_pki_dir }}/ca.key"
+    common_name: Kubernetes-FAC lab CA
+    use_common_name_for_san: false
+    basic_constraints: ["CA:TRUE"]
+    basic_constraints_critical: true
+    key_usage: [keyCertSign, cRLSign]
+    key_usage_critical: true
+  register: openbao_ca_csr
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Create CA certificate
+  community.crypto.x509_certificate:
+    path: "{{ openbao_pki_dir }}/ca.crt"
+    privatekey_path: "{{ openbao_pki_dir }}/ca.key"
+    csr_content: "{{ openbao_ca_csr.csr }}"
+    provider: selfsigned
+    selfsigned_not_after: "+3650d"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Create OpenBao server key
+  community.crypto.openssl_privatekey:
+    path: "{{ openbao_pki_dir }}/openbao.key"
+    type: ECC
+    curve: secp384r1
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Create OpenBao server signing request
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ openbao_pki_dir }}/openbao.key"
+    common_name: "{{ inventory_hostname }}"
+    subject_alt_name:
+      - "IP:{{ internal_ip }}"
+      - "DNS:{{ inventory_hostname }}"
+      - "IP:127.0.0.1"
+      - "DNS:localhost"
+    extended_key_usage: [serverAuth]
+  register: openbao_server_csr
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Create OpenBao server certificate
+  community.crypto.x509_certificate:
+    path: "{{ openbao_pki_dir }}/openbao.crt"
+    privatekey_path: "{{ openbao_pki_dir }}/openbao.key"
+    csr_content: "{{ openbao_server_csr.csr }}"
+    provider: ownca
+    ownca_path: "{{ openbao_pki_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ openbao_pki_dir }}/ca.key"
+    ownca_not_after: "+{{ openbao_cert_days }}d"
+    mode: "0644"
+  delegate_to: localhost
+  become: false

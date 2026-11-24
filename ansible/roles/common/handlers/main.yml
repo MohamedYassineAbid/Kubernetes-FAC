@@ -6,3 +6,8 @@
 
 - name: reload sysctl
   command: sysctl --system
+
+- name: restart multipathd
+  systemd:
+    name: multipathd
+    state: restarted

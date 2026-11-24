@@ -1,0 +1,86 @@
+---
+# Validated automatically before the role runs.
+argument_specs:
+  main:
+    short_description: External Secrets Operator + OpenBao ClusterSecretStore
+    options:
+      external_secrets_chart_version:
+        type: str
+        required: true
+        description: Chart version
+      external_secrets_namespace:
+        type: str
+        required: true
+        description: Namespace
+      external_secrets_release:
+        type: str
+        required: true
+        description: Release / ServiceAccount name
+      secret_store_name:
+        type: str
+        required: true
+        description: ClusterSecretStore name
+      openbao_url:
+        type: str
+        required: true
+        description: OpenBao in-cluster URL
+      openbao_kv_mount:
+        type: str
+        required: true
+        description: KV v2 mount
+      openbao_eso_role:
+        type: str
+        required: true
+        description: OpenBao auth role
+      external_secrets_sync_retries:
+        type: int
+        required: true
+        description: Readiness retries
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path
+      openbao_pki_dir:
+        type: str
+        required: true
+        description: Local CA dir (caBundle)
+  sync:
+    short_description: Materialise one Kubernetes Secret from OpenBao
+    options:
+      es_name:
+        type: str
+        required: true
+        description: Secret / ExternalSecret name
+      es_namespace:
+        type: str
+        required: true
+        description: Target namespace
+      es_path:
+        type: str
+        required: true
+        description: OpenBao path under the KV mount
+      es_properties:
+        type: dict
+        required: true
+        description: '{secretKey: OpenBao property}'
+      secret_store_name:
+        type: str
+        required: true
+        description: ClusterSecretStore
+      external_secrets_refresh_interval:
+        type: str
+        required: true
+        description: Refresh interval
+      external_secrets_sync_retries:
+        type: int
+        required: true
+        description: Wait retries
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path
+      es_static:
+        type: dict
+        required: false
+        default: {}
+        description: Non-secret keys merged into the Secret

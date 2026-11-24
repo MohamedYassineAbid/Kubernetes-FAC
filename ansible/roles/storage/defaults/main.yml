@@ -1,0 +1,10 @@
+---
+storage_nfs_mount_options: [nfsvers=4.1, noatime]
+storage_rollout_timeout: 120s
+# Longhorn
+longhorn_replica_count: 2                 # one copy per worker
+longhorn_data_path: /var/lib/longhorn     # on each worker's root disk (see vm_disk)
+longhorn_reserved_percentage: 15          # disk space Longhorn leaves free
+longhorn_csi_replicas: 2
+longhorn_ui_replicas: 1
+longhorn_install_timeout: 10m

@@ -1,17 +1,42 @@
 ---
-- name: Download Helm install script
-  get_url:
-    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-    dest: /tmp/get_helm.sh
-    mode: '0755'
+# Pinned release from get.helm.sh, verified against the published SHA-256
+# (replaces piping the get-helm-3 script from the main branch).
+- name: Set Helm download facts
+  ansible.builtin.set_fact:
+    helm_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    helm_dir: "/opt/helm-{{ helm_version }}"
 
-- name: Run Helm install script
-  command: /tmp/get_helm.sh
+- name: Create Helm version directory
+  ansible.builtin.file:
+    path: "{{ helm_dir }}"
+    state: directory
+    mode: "0755"
 
-- name: Verify Helm is installed
-  command: helm version
-  register: helm_version
+- name: Download Helm {{ helm_version }}
+  ansible.builtin.get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+    dest: "{{ helm_dir }}/helm.tar.gz"
+    checksum: "sha256:https://get.helm.sh/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz.sha256sum"
+    mode: "0644"
 
-- name: Print Helm version
-  debug:
-    msg: "{{ helm_version.stdout }}"
+- name: Extract Helm
+  ansible.builtin.unarchive:
+    src: "{{ helm_dir }}/helm.tar.gz"
+    dest: "{{ helm_dir }}"
+    remote_src: true
+    creates: "{{ helm_dir }}/linux-{{ helm_arch }}/helm"
+
+- name: Install Helm binary
+  ansible.builtin.copy:
+    src: "{{ helm_dir }}/linux-{{ helm_arch }}/helm"
+    dest: /usr/local/bin/helm
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verify Helm version
+  ansible.builtin.command: helm version --short
+  register: helm_version_out
+  changed_when: false
+  failed_when: helm_version not in helm_version_out.stdout

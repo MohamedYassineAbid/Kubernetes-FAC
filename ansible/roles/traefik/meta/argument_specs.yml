@@ -1,0 +1,75 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Traefik ingress with an authenticated dashboard
+    options:
+      traefik_image:
+        type: str
+        required: true
+        description: Image
+      traefik_namespace:
+        type: str
+        required: true
+        description: Namespace
+      traefik_service_name:
+        type: str
+        required: true
+        description: Service name
+      traefik_replicas:
+        type: int
+        required: true
+        description: Replicas
+      traefik_ingress_class:
+        type: str
+        required: true
+        description: IngressClass
+      traefik_nodeport_http_enabled:
+        type: bool
+        required: true
+        description: Expose HTTP NodePort
+      traefik_nodeport_http:
+        type: int
+        required: true
+        description: HTTP NodePort
+      traefik_nodeport_https_enabled:
+        type: bool
+        required: true
+        description: Expose HTTPS NodePort
+      traefik_nodeport_https:
+        type: int
+        required: true
+        description: HTTPS NodePort
+      traefik_dashboard_enabled:
+        type: bool
+        required: true
+        description: Serve the dashboard
+      traefik_dashboard_host:
+        type: str
+        required: true
+        description: Dashboard host
+      traefik_dashboard_user:
+        type: str
+        required: true
+        description: Dashboard user
+      traefik_dashboard_auth_salt:
+        type: str
+        required: true
+        description: bcrypt salt
+      traefik_trusted_ips:
+        type: list
+        required: true
+        description: Trusted proxy IPs
+      traefik_servers_transport_insecure_skip_verify:
+        type: bool
+        required: true
+        description: Skip backend TLS verify
+      traefik_rollout_timeout:
+        type: str
+        required: true
+        description: Rollout timeout
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path

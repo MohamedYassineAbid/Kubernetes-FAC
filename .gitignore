@@ -52,3 +52,5 @@ charts/*.tgz
 
 # Vagrant (if used)
 .vagrant/                                                                    
+# Fetched cluster credentials (cluster-admin kubeconfig)
+ansible/fetched/

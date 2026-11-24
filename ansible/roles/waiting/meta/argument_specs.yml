@@ -1,0 +1,11 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Wait until all system pods run
+    options:
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path

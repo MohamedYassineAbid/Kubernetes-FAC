@@ -1,0 +1,5 @@
+---
+gitea_data_path: /srv/gitea
+gitea_http_port: 3000
+gitea_ssh_port: 2224
+gitea_uid: 1000         # fixed by the gitea/gitea image

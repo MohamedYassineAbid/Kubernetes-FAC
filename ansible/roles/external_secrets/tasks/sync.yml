@@ -1,0 +1,31 @@
+---
+# Reusable: materialise one Kubernetes Secret from OpenBao.
+#   include_role: { name: external_secrets, tasks_from: sync }
+#   vars: es_name, es_namespace, es_path, es_properties {secretKey: property}, es_static {key: value}
+- name: Ensure namespace {{ es_namespace }} exists
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ es_namespace }}"
+
+- name: Create ExternalSecret {{ es_namespace }}/{{ es_name }}
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: "{{ lookup('template', 'externalsecret.yaml.j2') | from_yaml }}"
+
+- name: Wait for Secret {{ es_namespace }}/{{ es_name }}
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    kind: Secret
+    namespace: "{{ es_namespace }}"
+    name: "{{ es_name }}"
+  register: external_secrets_target
+  until: external_secrets_target.resources | length > 0
+  retries: "{{ external_secrets_sync_retries }}"
+  delay: 5
+  no_log: true

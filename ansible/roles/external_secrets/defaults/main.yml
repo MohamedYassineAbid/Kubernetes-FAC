@@ -1,0 +1,3 @@
+---
+external_secrets_refresh_interval: 1h
+external_secrets_sync_retries: 20

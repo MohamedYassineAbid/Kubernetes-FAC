@@ -1,58 +1,106 @@
 ---
 # ── kubeadm init ─────────────────────────────────────────────
+- name: Install Python kubernetes library (needed by kubernetes.core modules)
+  apt:
+    name: python3-kubernetes
+    state: present
+
 - name: Check if cluster is already initialized
   stat:
-    path: /etc/kubernetes/admin.conf
+    path: "{{ kubeconfig_path }}"
   register: kubeadm_init_check
 
+# ── Hardening inputs that must exist before the API server starts ──
+- name: Create encryption-at-rest and audit directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/kubernetes/encryption
+    - /etc/kubernetes/audit
+    - /var/log/kubernetes/audit
+
+- name: Check for an existing etcd encryption config
+  stat:
+    path: /etc/kubernetes/encryption/config.yaml
+  register: encryption_config
+
+# The key is generated on the control plane and never leaves it.
+# Never regenerate it for a running cluster: existing Secrets would become unreadable.
+- name: Generate etcd encryption key
+  shell: set -o pipefail && head -c 32 /dev/urandom | base64 -w0
+  args:
+    executable: /bin/bash
+  register: etcd_encryption_key
+  changed_when: true
+  no_log: true
+  when: not encryption_config.stat.exists
+
+- name: Write etcd encryption config
+  template:
+    src: encryption-config.yaml.j2
+    dest: /etc/kubernetes/encryption/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: not encryption_config.stat.exists
+
+- name: Write API server audit policy
+  template:
+    src: audit-policy.yaml.j2
+    dest: /etc/kubernetes/audit/policy.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Read installed kubeadm version
+  command: kubeadm version -o short
+  register: kubeadm_version_out
+  changed_when: false
+
+- name: Render kubeadm config
+  template:
+    src: kubeadm-config.yaml.j2
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
 - name: Pull kubeadm images
-  command: kubeadm config images pull
+  command: kubeadm config images pull --config /etc/kubernetes/kubeadm-config.yaml
   when: not kubeadm_init_check.stat.exists
 
 - name: Initialize the Kubernetes cluster
-  command: >
-    kubeadm init
-      --apiserver-advertise-address={{ internal_ip }}
-      --apiserver-cert-extra-sans={{ internal_ip }}
-      --pod-network-cidr={{ pod_cidr }}
-      --service-cidr={{ service_cidr }}
-      --node-name controlplane
-      --ignore-preflight-errors Swap
+  command: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml
   when: not kubeadm_init_check.stat.exists
 
-# ── kubeconfig for root ──────────────────────────────────────
-- name: Create .kube directory for root
+# ── kubeconfig for root and {{ ansible_user }} (cluster-admin: owner-only) ──
+- name: Create .kube directories
   file:
-    path: /root/.kube
+    path: "{{ item.home }}/.kube"
     state: directory
-    mode: "0755"
+    owner: "{{ item.user }}"
+    group: "{{ item.user }}"
+    mode: "0700"
+  loop:
+    - { user: root, home: /root }
+    - { user: "{{ ansible_user }}", home: "/home/{{ ansible_user }}" }
 
-- name: Copy admin.conf to root kubeconfig
+- name: Install admin kubeconfig
   copy:
-    src: /etc/kubernetes/admin.conf
-    dest: /root/.kube/config
+    src: "{{ kubeconfig_path }}"
+    dest: "{{ item.home }}/.kube/config"
     remote_src: true
-    owner: root
-    group: root
-    mode: "0644"
-
-# ── kubeconfig for {{ ansible_user }} user ──────────────────────────────
-- name: Create .kube directory for {{ ansible_user }}
-  file:
-    path: /home/{{ ansible_user }}/.kube
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0755"
-
-- name: Copy admin.conf to {{ ansible_user }} kubeconfig
-  copy:
-    src: /etc/kubernetes/admin.conf
-    dest: /home/{{ ansible_user }}/.kube/config
-    remote_src: true
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0644"
+    owner: "{{ item.user }}"
+    group: "{{ item.user }}"
+    mode: "0600"
+  loop:
+    - { user: root, home: /root }
+    - { user: "{{ ansible_user }}", home: "/home/{{ ansible_user }}" }
 
 # ── Ensure Calico CNI directory ──────────────────────────────
 - name: Create Calico CNI directory
@@ -65,29 +113,37 @@
 - name: Download Calico manifest
   get_url:
     url: "https://raw.githubusercontent.com/projectcalico/calico/v{{ calico_version }}/manifests/calico.yaml"
-    dest: /tmp/calico.yaml
+    dest: "/root/calico-v{{ calico_version }}.yaml"
+    mode: "0644"
 
 - name: Apply Calico manifest
-  command: kubectl apply -f /tmp/calico.yaml --kubeconfig=/etc/kubernetes/admin.conf
+  command: kubectl apply -f /root/calico-v{{ calico_version }}.yaml --kubeconfig={{ kubeconfig_path }}
   register: calico_result
   changed_when: "'created' in calico_result.stdout or 'configured' in calico_result.stdout"
 
-- name: Apply Metrics Server manifest
-  command: kubectl apply -f https://raw.githubusercontent.com/techiescamp/kubeadm-scripts/main/manifests/metrics-server.yaml --kubeconfig=/etc/kubernetes/admin.conf
-  register: metrics_result
-  changed_when: "'created' in metrics_result.stdout or 'configured' in metrics_result.stdout"
-
+# Short-lived token: only needs to outlive the worker play that follows
 - name: Generate kubeadm join command
-  command: kubeadm token create --print-join-command
+  command: kubeadm token create --print-join-command --ttl 30m
   register: join_command_output
   changed_when: false
+  no_log: true
 
 - name: Store join command as fact
   set_fact:
     kubeadm_join_command: "{{ join_command_output.stdout }}"
+  no_log: true
 
+# Local copy for running kubectl from the host. ansible/fetched/ is git-ignored;
+# never commit it — it is a cluster-admin credential.
 - name: Fetch admin.conf to local machine
   fetch:
-    src: /etc/kubernetes/admin.conf
+    src: "{{ kubeconfig_path }}"
     dest: "{{ playbook_dir }}/fetched/admin.conf"
     flat: true
+
+- name: Restrict local admin.conf to the current user
+  file:
+    path: "{{ playbook_dir }}/fetched/admin.conf"
+    mode: "0600"
+  delegate_to: localhost
+  become: false

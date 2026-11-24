@@ -1,17 +1,15 @@
 ---
-- name: Repair apt cache if corrupted
-  shell: |
-    rm -rf /var/lib/apt/lists/*
-    apt clean
-    apt update
-  become: true
+- name: Refresh apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
 
 - name: Add all cluster nodes to /etc/hosts
   lineinfile:
     path: /etc/hosts
     line: "{{ hostvars[item]['internal_ip'] }} {{ item }}"
     state: present
-  loop: "{{ groups['all'] | default(groups['k8s_cluster']) }}"
+  loop: "{{ groups['active'] | default(groups['all']) }}"
 
 - name: Create systemd-resolved config directory
   file:
@@ -80,11 +78,15 @@
       net.bridge.bridge-nf-call-iptables  = 1
       net.bridge.bridge-nf-call-ip6tables = 1
       net.ipv4.ip_forward                 = 1
+      # Required by kubelet protectKernelDefaults=true (kubeadm KubeletConfiguration);
+      # kubelet refuses to start if these differ from its expected values.
+      vm.overcommit_memory                = 1
+      vm.panic_on_oom                     = 0
+      kernel.panic                        = 10
+      kernel.panic_on_oops                = 1
+      kernel.keys.root_maxkeys            = 1000000
+      kernel.keys.root_maxbytes           = 25000000
   notify: reload sysctl
-
-- name: Apply sysctl settings now
-  command: sysctl --system
-  changed_when: false
 
 - name: Create keyrings directory
   file:
@@ -92,18 +94,19 @@
     state: directory
     mode: "0755"
 
+# CRI-O minor version must match the Kubernetes minor version
 - name: Add CRI-O apt key
   shell: |
-    curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/Release.key | \
-      gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+    curl -fsSL https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ kubernetes_version_short }}/deb/Release.key | \
+      gpg --dearmor -o /etc/apt/keyrings/cri-o-v{{ kubernetes_version_short }}-apt-keyring.gpg
   args:
-    creates: /etc/apt/keyrings/cri-o-apt-keyring.gpg
+    creates: /etc/apt/keyrings/cri-o-v{{ kubernetes_version_short }}-apt-keyring.gpg
 
 - name: Add CRI-O repository
   copy:
     dest: /etc/apt/sources.list.d/cri-o.list
     content: |
-      deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/ /
+      deb [signed-by=/etc/apt/keyrings/cri-o-v{{ kubernetes_version_short }}-apt-keyring.gpg] https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ kubernetes_version_short }}/deb/ /
 
 - name: Install CRI-O
   apt:
@@ -121,15 +124,15 @@
 - name: Add Kubernetes apt key
   shell: |
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version_short }}/deb/Release.key | \
-      gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      gpg --dearmor -o /etc/apt/keyrings/kubernetes-v{{ kubernetes_version_short }}-apt-keyring.gpg
   args:
-    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    creates: /etc/apt/keyrings/kubernetes-v{{ kubernetes_version_short }}-apt-keyring.gpg
 
 - name: Add Kubernetes repository
   copy:
     dest: /etc/apt/sources.list.d/kubernetes.list
     content: |
-      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version_short }}/deb/ /
+      deb [signed-by=/etc/apt/keyrings/kubernetes-v{{ kubernetes_version_short }}-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version_short }}/deb/ /
 
 - name: Install kubelet, kubectl, kubeadm
   apt:
@@ -154,3 +157,54 @@
     dest: /etc/default/kubelet
     content: |
       KUBELET_EXTRA_ARGS=--node-ip={{ internal_ip }}
+
+# ── Longhorn prerequisites (storage_backend: longhorn) ───────
+- name: Install Longhorn node packages
+  apt:
+    name: [open-iscsi, cryptsetup, dmsetup]
+    state: present
+  when: storage_backend == 'longhorn'
+
+- name: Load Longhorn kernel modules at boot
+  copy:
+    dest: /etc/modules-load.d/longhorn.conf
+    content: |
+      iscsi_tcp
+      dm_crypt
+    mode: "0644"
+  when: storage_backend == 'longhorn'
+
+- name: Load Longhorn kernel modules now
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: [iscsi_tcp, dm_crypt]
+  when: storage_backend == 'longhorn'
+
+- name: Enable iscsid
+  systemd:
+    name: iscsid
+    enabled: true
+    state: started
+  when: storage_backend == 'longhorn'
+
+# Ubuntu's multipathd grabs Longhorn's iSCSI disks and breaks mounts (Longhorn KB)
+- name: Check for multipathd
+  stat:
+    path: /usr/sbin/multipathd
+  register: multipathd_bin
+  when: storage_backend == 'longhorn'
+
+- name: Keep multipathd away from Longhorn devices
+  copy:
+    dest: /etc/multipath.conf
+    content: |
+      defaults {
+          user_friendly_names yes
+      }
+      blacklist {
+          devnode "^sd[a-z0-9]+"
+      }
+    mode: "0644"
+  notify: restart multipathd
+  when: storage_backend == 'longhorn' and multipathd_bin.stat.exists

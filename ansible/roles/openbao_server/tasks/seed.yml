@@ -1,0 +1,49 @@
+---
+# Create any key of {{ openbao_secret.path }} that doesn't exist yet.
+# Existing values are never overwritten; rotate them in OpenBao itself.
+- name: Read {{ openbao_secret.path }}
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/{{ openbao_kv_mount }}/data/{{ openbao_secret.path }}"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+    status_code: [200, 404]
+  register: openbao_secret_current
+  no_log: true
+
+- name: Work out missing keys for {{ openbao_secret.path }}
+  ansible.builtin.set_fact:
+    openbao_secret_existing: "{{ openbao_secret_current.json.data.data | default({}, true) if openbao_secret_current.status == 200 else {} }}"
+  no_log: true
+
+- name: Find keys to generate for {{ openbao_secret.path }}
+  ansible.builtin.set_fact:
+    openbao_secret_missing: "{{ openbao_secret.fields | difference(openbao_secret_existing.keys() | list) }}"
+
+- name: Generate and store missing keys
+  when: openbao_secret_missing | length > 0
+  block:
+    - name: Generate values with the OpenBao password policy
+      ansible.builtin.uri:
+        ca_path: "{{ openbao_ca }}"
+        url: "{{ openbao_api }}/v1/sys/policies/password/{{ openbao_password_policy }}/generate"
+        headers: "{{ openbao_headers }}"
+        return_content: true
+      loop: "{{ openbao_secret_missing }}"
+      register: openbao_generated
+      no_log: true
+
+    - name: Write {{ openbao_secret.path }}
+      ansible.builtin.uri:
+        ca_path: "{{ openbao_ca }}"
+        url: "{{ openbao_api }}/v1/{{ openbao_kv_mount }}/data/{{ openbao_secret.path }}"
+        method: POST
+        headers: "{{ openbao_headers }}"
+        body_format: json
+        body:
+          data: >-
+            {{ openbao_secret_existing | combine(dict(openbao_secret_missing |
+               zip(openbao_generated.results | map(attribute='json') | map(attribute='data') | map(attribute='password')))) }}
+        status_code: [200, 204]
+      changed_when: true
+      no_log: true

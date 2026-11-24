@@ -1,0 +1,15 @@
+---
+jenkins_node_port: 32000
+jenkins_storage_size: 10Gi
+jenkins_wait_timeout: 500s
+jenkins_admin_secret_name: jenkins-admin
+jenkins_java_opts: "-Xmx700m -Xms512m"
+jenkins_controller_resources:
+  requests: { cpu: 50m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 1Gi }
+jenkins_reload_sidecar_resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: 100m, memory: 256Mi }
+jenkins_init_resources:
+  requests: { cpu: 50m, memory: 512Mi }
+  limits: { cpu: 200m, memory: 1Gi }

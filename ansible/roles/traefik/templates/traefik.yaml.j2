@@ -46,7 +46,7 @@ metadata:
   name: {{ traefik_service_name }}
   namespace: {{ traefik_namespace }}
 spec:
-  replicas: 1
+  replicas: {{ traefik_replicas }}
   selector:
     matchLabels:
       app: {{ traefik_service_name }}
@@ -60,14 +60,17 @@ spec:
         - name: traefik
           image: {{ traefik_image }}
           args:
+{% if traefik_dashboard_enabled %}
+            # Dashboard only via the authenticated router in the dynamic config
+            # (no --api.insecure, which would expose the API unauthenticated on :9000)
             - --api.dashboard=true
-            - --api.insecure=true
+            - --providers.file.directory=/etc/traefik/dynamic
+            - --providers.file.watch=true
+{% endif %}
             - --providers.kubernetesingress=true
             - --entrypoints.web.address=:8000
             - --entrypoints.websecure.address=:8443
             - --entrypoints.traefik.address=:9000
-            - --entryPoints.web.forwardedHeaders.insecure=true
-            - --entryPoints.websecure.forwardedHeaders.insecure=true
 {% if traefik_servers_transport_insecure_skip_verify | bool %}
             - --serversTransport.insecureSkipVerify=true
 {% endif %}
@@ -84,6 +87,33 @@ spec:
               containerPort: 8443
             - name: traefik
               containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: traefik
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: traefik
+            initialDelaySeconds: 10
+            periodSeconds: 20
+{% if traefik_dashboard_enabled %}
+          volumeMounts:
+            - name: dynamic-config
+              mountPath: /etc/traefik/dynamic
+              readOnly: true
+            - name: dashboard-auth
+              mountPath: /etc/traefik/auth
+              readOnly: true
+      volumes:
+        - name: dynamic-config
+          configMap:
+            name: {{ traefik_service_name }}-dynamic
+        - name: dashboard-auth
+          secret:
+            secretName: {{ traefik_service_name }}-dashboard-auth
+{% endif %}
 ---
 apiVersion: v1
 kind: Service
@@ -110,37 +140,33 @@ spec:
 ---
 {% if traefik_dashboard_enabled %}
 apiVersion: v1
-kind: Service
+kind: Secret
 metadata:
-  name: {{ traefik_service_name }}-dashboard
+  name: {{ traefik_service_name }}-dashboard-auth
   namespace: {{ traefik_namespace }}
-spec:
-  type: ClusterIP
-  selector:
-    app: {{ traefik_service_name }}
-  ports:
-    - name: dashboard
-      port: 9000
-      targetPort: traefik
+type: Opaque
+stringData:
+  users: "{{ traefik_dashboard_user }}:{{ traefik_dashboard_password | password_hash('bcrypt', salt=traefik_dashboard_auth_salt, rounds=12) }}"
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: {{ traefik_service_name }}-dashboard
+  name: {{ traefik_service_name }}-dynamic
   namespace: {{ traefik_namespace }}
-spec:
-  ingressClassName: {{ traefik_ingress_class }}
-  rules:
-    - host: {{ traefik_dashboard_host }}
-      http:
-        paths:
-          - path: {{ traefik_dashboard_path }}
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ traefik_service_name }}-dashboard
-                port:
-                  number: 9000
+data:
+  dashboard.yml: |
+    http:
+      routers:
+        dashboard:
+          rule: "Host(`{{ traefik_dashboard_host }}`)"
+          entryPoints: [web, websecure]
+          service: api@internal
+          middlewares: [dashboard-auth]
+      middlewares:
+        dashboard-auth:
+          basicAuth:
+            usersFile: /etc/traefik/auth/users
+            removeHeader: true
 ---
 {% endif %}
 apiVersion: networking.k8s.io/v1

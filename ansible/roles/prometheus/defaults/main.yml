@@ -1,0 +1,3 @@
+---
+prometheus_storage_size: 8Gi
+prometheus_alertmanager_enabled: false

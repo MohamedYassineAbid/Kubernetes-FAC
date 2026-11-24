@@ -1,0 +1,5 @@
+---
+# Provides the default StorageClass every stateful app uses ({{ storage_class_name }}).
+# storage_backend: longhorn | local-path | nfs
+- name: Deploy the {{ storage_backend }} storage backend
+  ansible.builtin.include_tasks: "{{ storage_backend }}.yml"

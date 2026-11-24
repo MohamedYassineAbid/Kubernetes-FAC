@@ -1,41 +1,22 @@
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ mysql.namespace }}
-  labels:
-    app: mysql
-    team: devops
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: mysql-secret
-  namespace: {{ mysql.namespace }}
-type: Opaque
-stringData:
-  root-password: "{{ mysql.root_password }}"
-  user: "{{ mysql.user }}"
-  password: "{{ mysql.password }}"
-  database: "{{ mysql.database }}"
+# Namespace and the mysql Secret are created by the role (Secret via ExternalSecret)
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mysql-config
-  namespace: {{ mysql.namespace }}
+  namespace: {{ mysql_namespace }}
 data:
   my.cnf: |
     [mysqld]
-    default_authentication_plugin=mysql_native_password
-    max_connections=200
-    innodb_buffer_pool_size=128M
+    # MySQL 8.4 removed default_authentication_plugin; caching_sha2_password is the default.
+    max_connections={{ mysql_max_connections }}
+    innodb_buffer_pool_size={{ mysql_innodb_buffer_pool_size }}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mysql
-  namespace: {{ mysql.namespace }}
+  namespace: {{ mysql_namespace }}
 spec:
   serviceName: mysql
   replicas: 1
@@ -50,7 +31,7 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: {{ mysql.image }}
+          image: {{ mysql_image }}
           ports:
             - containerPort: 3306
               name: mysql
@@ -58,30 +39,24 @@ spec:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: mysql-secret
+                  name: {{ mysql_secret_name }}
                   key: root-password
             - name: MYSQL_DATABASE
               valueFrom:
                 secretKeyRef:
-                  name: mysql-secret
+                  name: {{ mysql_secret_name }}
                   key: database
             - name: MYSQL_USER
               valueFrom:
                 secretKeyRef:
-                  name: mysql-secret
+                  name: {{ mysql_secret_name }}
                   key: user
             - name: MYSQL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: mysql-secret
+                  name: {{ mysql_secret_name }}
                   key: password
-          resources:
-            requests:
-              cpu: {{ mysql.resources.requests.cpu }}
-              memory: {{ mysql.resources.requests.memory }}
-            limits:
-              cpu: {{ mysql.resources.limits.cpu }}
-              memory: {{ mysql.resources.limits.memory }}
+          resources: {{ mysql_resources | to_json }}
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql
@@ -116,16 +91,16 @@ spec:
         name: mysql-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: {{ mysql.storage_class }}
+        storageClassName: {{ storage_class_name }}
         resources:
           requests:
-            storage: {{ mysql.storage_size }}
+            storage: {{ mysql_storage_size }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: mysql
-  namespace: {{ mysql.namespace }}
+  namespace: {{ mysql_namespace }}
 spec:
   type: ClusterIP
   selector:

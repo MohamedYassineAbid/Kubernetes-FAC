@@ -1,0 +1,72 @@
+# Rendered by the controlplane role. kubeadm reads it once, at `kubeadm init`.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "{{ internal_ip }}"
+  bindPort: 6443
+nodeRegistration:
+  name: "{{ inventory_hostname }}"
+  criSocket: unix:///var/run/crio/crio.sock
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: "{{ kubeadm_version_out.stdout | trim }}"
+networking:
+  podSubnet: "{{ pod_cidr }}"
+  serviceSubnet: "{{ service_cidr }}"
+apiServer:
+  certSANs:
+    - "{{ internal_ip }}"
+    - "{{ inventory_hostname }}"
+  extraArgs:
+    # Secrets are encrypted in etcd (secretbox, key generated on this node only)
+    - name: encryption-provider-config
+      value: /etc/kubernetes/encryption/config.yaml
+    # API audit trail
+    - name: audit-policy-file
+      value: /etc/kubernetes/audit/policy.yaml
+    - name: audit-log-path
+      value: /var/log/kubernetes/audit/audit.log
+    - name: audit-log-maxage
+      value: "7"
+    - name: audit-log-maxbackup
+      value: "5"
+    - name: audit-log-maxsize
+      value: "50"
+    - name: profiling
+      value: "false"
+  extraVolumes:
+    - name: encryption-config
+      hostPath: /etc/kubernetes/encryption
+      mountPath: /etc/kubernetes/encryption
+      readOnly: true
+      pathType: Directory
+    - name: audit-policy
+      hostPath: /etc/kubernetes/audit
+      mountPath: /etc/kubernetes/audit
+      readOnly: true
+      pathType: Directory
+    - name: audit-log
+      hostPath: /var/log/kubernetes/audit
+      mountPath: /var/log/kubernetes/audit
+      readOnly: false
+      pathType: DirectoryOrCreate
+controllerManager:
+  extraArgs:
+    - name: profiling
+      value: "false"
+scheduler:
+  extraArgs:
+    - name: profiling
+      value: "false"
+---
+# Uploaded to the kubelet-config ConfigMap, so workers inherit it on join.
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+readOnlyPort: 0
+rotateCertificates: true
+# Every pod gets the RuntimeDefault seccomp profile unless it asks otherwise
+seccompDefault: true
+# Fail instead of silently changing kernel tunables (sysctls set in the common role)
+protectKernelDefaults: true

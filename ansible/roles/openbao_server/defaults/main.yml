@@ -1,0 +1,21 @@
+---
+openbao_api_port: 8200
+openbao_cluster_port: 8201
+openbao_config_dir: /etc/openbao
+openbao_tls_dir: /etc/openbao/tls
+openbao_data_dir: /opt/openbao/data
+openbao_log_dir: /var/log/openbao
+openbao_cert_days: 825
+# Static-key auto-unseal for the lab. Production: a cloud KMS, an HSM or Transit
+# on another OpenBao. Change the id only together with a key rotation.
+openbao_seal_key_id: "lab-1"
+# Root token + recovery key (break-glass). Kept on the VM and fetched locally (0600).
+openbao_init_file: /root/.openbao/init.json
+openbao_password_policy: kfac-generated
+openbao_password_length: 32
+openbao_eso_policy: external-secrets-read
+openbao_ansible_role: ansible
+openbao_ansible_policy: ansible-bootstrap-read
+openbao_ansible_token_ttl: 15m
+openbao_reviewer_sa: openbao-token-reviewer
+openbao_ready_retries: 30

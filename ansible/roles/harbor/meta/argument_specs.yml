@@ -1,0 +1,31 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Harbor on the services VM
+    options:
+      harbor_version:
+        type: str
+        required: true
+        description: Release
+      harbor_install_dir:
+        type: str
+        required: true
+        description: Install dir
+      harbor_hostname:
+        type: str
+        required: true
+        description: Hostname
+      harbor_http_port:
+        type: int
+        required: true
+        description: HTTP port
+      harbor_url:
+        type: str
+        required: true
+        description: host:port
+      harbor_data_volume:
+        type: str
+        required: true
+        description: Data volume

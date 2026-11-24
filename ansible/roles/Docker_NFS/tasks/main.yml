@@ -9,58 +9,6 @@
       - nfs-kernel-server
       - docker.io
       - ufw
-    state: present
-    update_cache: true
-
-- name: Enable and start Docker
-  systemd:
-    name: docker
-    enabled: true
-    state: started
-
-- name: Create docker group
-  group:
-    name: docker
-    state: present
-
-- name: Add {{ ansible_user }} user to docker group
-  user:
-    name: "{{ ansible_user }}"
-    groups: docker
-    append: true
-
-
-- name: Create NFS export directory
-  file:
-    path: /srv/nfs/k8s
-    state: directory
-    owner: nobody
-    group: nogroup
-    mode: "0777"
-    recurse: true
-
-- name: Configure NFS exports
-  lineinfile:
-    path: /etc/exports
-    line: "/srv/nfs/k8s *(rw,sync,no_subtree_check,no_root_squash)"
-    state: present
-  notify: restart nfs
-
-- name: Export NFS shares
-  command: exportfs -rav
-  changed_when: false
-
-
-- name: Install required packages
-  apt:
-    name:
-      - git
-      - curl
-      - wget
-      - gnupg2
-      - nfs-kernel-server
-      - docker.io
-      - ufw
       - ca-certificates
       - apt-transport-https
     state: present
@@ -83,6 +31,31 @@
     groups: docker
     append: true
 
+# Only the provisioner (root, via no_root_squash) creates per-PVC subdirectories,
+# so the export root needs no world-write bits.
+- name: Create NFS export directory
+  file:
+    path: "{{ nfs_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Exported to the Kubernetes nodes' IPs only, not the whole host-only subnet.
+# no_root_squash stays: images such as MySQL, Grafana and Jenkins chown their data
+# directory at start-up, which fails under root_squash. Inline `nfs:` pod volumes
+# (which would mount the whole export) are blocked by the Kyverno
+# disallow-nfs-volumes policy instead.
+- name: Configure NFS exports
+  lineinfile:
+    path: /etc/exports
+    regexp: '^{{ nfs_path }}\s'
+    line: >-
+      {{ nfs_path }}
+      {% for ip in nfs_export_clients %}{{ ip }}(rw,sync,no_subtree_check,no_root_squash){{ ' ' if not loop.last else '' }}{% endfor %}
+    state: present
+  notify: reload nfs exports
+
 - name: Create keyrings directory
   file:
     path: /etc/apt/keyrings
@@ -96,14 +69,15 @@
     mode: '0644'
 
 - name: Add Docker apt repository
-  apt_repository:
-    repo: >
-      deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') }}
-      signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/ubuntu
-      {{ ansible_lsb.codename }} stable
+  deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_lsb.codename }}"
+    components: stable
+    architectures: "{{ ansible_architecture | replace('x86_64', 'amd64') }}"
+    signed_by: /etc/apt/keyrings/docker.asc
     state: present
-    filename: docker
 
 - name: Install Docker Compose plugin
   apt:

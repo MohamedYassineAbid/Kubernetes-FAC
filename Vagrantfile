@@ -1,24 +1,37 @@
+require "yaml"
 
-CLUSTER_NAME      = "Kubernetes Clusterss pfa"
-BOX               = "ubuntu/jammy64"
+# Everything comes from the Ansible inventory (single source of truth).
+# KFAC_ENV picks the environment: ansible/inventories/<env>/hosts.yml (default: lab)
+KFAC_ENV  = ENV.fetch("KFAC_ENV", "lab")
+INVENTORY = YAML.load_file(File.join(__dir__, "ansible", "inventories", KFAC_ENV, "hosts.yml"))
+ALL_VARS  = INVENTORY["all"].fetch("vars", {})
 
-# Network
-CONTROL_IP        = "10.0.0.10"
-IP_NW             = "10.0.0."
-IP_START          = 10
-NUM_WORKER_NODES  = 2
-SERVICES_IP       = "10.0.0.80"
+CLUSTER_NAME = ALL_VARS.fetch("cluster_name", "")
+BOX          = ALL_VARS.fetch("vagrant_box")
 
-# Resources
-CONTROL_CPU       = 3
-CONTROL_MEMORY    = 3072
+def collect_hosts(group, acc = {})
+  (group["hosts"] || {}).each { |name, vars| acc[name] = vars || {} }
+  (group["children"] || {}).each_value { |child| collect_hosts(child || {}, acc) }
+  acc
+end
 
-WORKER_CPU        = 2
-WORKER_MEMORY     = 3048
+# Find a group by name anywhere in the inventory tree
+def find_group(group, name)
+  (group["children"] || {}).each do |child_name, child|
+    return child || {} if child_name == name
+    found = find_group(child || {}, name)
+    return found if found
+  end
+  nil
+end
 
-SERVICES_CPU      = 2
-SERVICES_MEMORY   = 3072
+NODES = collect_hosts(INVENTORY["all"])
 
+# Optional VMs, switched in hosts.yml: group => switch
+{ "service_nodes" => "services_vm_enabled", "secrets_nodes" => "deploy_secrets" }.each do |group, switch|
+  next if ALL_VARS.fetch(switch, false)
+  collect_hosts(find_group(INVENTORY["all"], group) || {}).each_key { |h| NODES.delete(h) }
+end
 
 Vagrant.configure("2") do |config|
 
@@ -31,43 +44,21 @@ Vagrant.configure("2") do |config|
 
   config.ssh.insert_key = true
 
-  # ── Control Plane 
-  config.vm.define "controlplane" do |controlplane|
-    controlplane.vm.hostname = "controlplane"
-    controlplane.vm.network "private_network", ip: CONTROL_IP
-    controlplane.vm.provider "virtualbox" do |vb|
-        vb.cpus = CONTROL_CPU
-        vb.memory = CONTROL_MEMORY
+  NODES.each do |name, vars|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+      node.vm.network "private_network", ip: vars.fetch("internal_ip")
+      # Primary disk size (e.g. "60GB"); only grows, never shrinks.
+      # Requires: VAGRANT_EXPERIMENTAL="disks" vagrant up
+      if vars["vm_disk"]
+        node.vm.disk :disk, size: vars["vm_disk"], primary: true
+      end
+      node.vm.provider "virtualbox" do |vb|
+        vb.cpus   = vars.fetch("vm_cpus", 2)
+        vb.memory = vars.fetch("vm_memory", 2048)
         if CLUSTER_NAME != ""
           vb.customize ["modifyvm", :id, "--groups", ("/" + CLUSTER_NAME)]
         end
-    end
-  end
-
-  # ── Worker Nodes 
-  (1..NUM_WORKER_NODES).each do |i|
-    config.vm.define "node0#{i}" do |node|
-      node.vm.hostname = "node0#{i}"
-      node.vm.network "private_network", ip: IP_NW + "#{IP_START + i}"
-      node.vm.provider "virtualbox" do |vb|
-          vb.cpus = WORKER_CPU
-          vb.memory = WORKER_MEMORY
-          if CLUSTER_NAME != ""
-            vb.customize ["modifyvm", :id, "--groups", ("/" + CLUSTER_NAME)]
-          end
-      end
-    end
-  end
-
-  # ── Services VM
-  config.vm.define "services" do |services|
-    services.vm.hostname = "services"
-    services.vm.network "private_network", ip: SERVICES_IP
-    services.vm.provider "virtualbox" do |vb|
-      vb.cpus = SERVICES_CPU
-      vb.memory = SERVICES_MEMORY
-      if CLUSTER_NAME != ""
-        vb.customize ["modifyvm", :id, "--groups", ("/" + CLUSTER_NAME)]
       end
     end
   end

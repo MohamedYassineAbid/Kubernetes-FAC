@@ -1,0 +1,3 @@
+---
+# Hosts allowed to mount the export: the Kubernetes nodes only
+nfs_export_clients: "{{ groups['k8s_cluster'] | map('extract', hostvars, 'internal_ip') | list }}"

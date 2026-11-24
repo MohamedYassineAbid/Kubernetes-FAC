@@ -1,0 +1,27 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Nexus on the services VM
+    options:
+      nexus_image:
+        type: str
+        required: true
+        description: Image
+      nexus_data_path:
+        type: str
+        required: true
+        description: Data path
+      nexus_http_port:
+        type: int
+        required: true
+        description: HTTP port
+      nexus_registry_port:
+        type: int
+        required: true
+        description: Docker registry port
+      nexus_uid:
+        type: int
+        required: true
+        description: Image UID

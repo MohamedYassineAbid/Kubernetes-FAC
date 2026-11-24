@@ -1,0 +1,19 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Join a worker node
+    options:
+      control_plane_host:
+        type: str
+        required: true
+        description: Inventory name of the control plane
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path
+      ansible_user:
+        type: str
+        required: true
+        description: Login user

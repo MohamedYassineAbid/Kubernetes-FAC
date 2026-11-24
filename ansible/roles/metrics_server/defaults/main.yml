@@ -1,0 +1,6 @@
+---
+metrics_server_namespace: kube-system
+# kubeadm kubelets serve self-signed certificates, so metrics-server cannot verify
+# them. Set to false once kubelet serving certs are CA-signed (serverTLSBootstrap
+# + a CSR approver).
+metrics_server_kubelet_insecure_tls: true

@@ -1,0 +1,15 @@
+---
+traefik_service_name: traefik
+traefik_replicas: 1
+traefik_nodeport_http_enabled: true
+traefik_nodeport_http: 30090
+traefik_nodeport_https_enabled: true
+traefik_nodeport_https: 30490
+traefik_rollout_timeout: 240s
+# Dashboard is served through a basic-auth protected router (never --api.insecure)
+traefik_dashboard_enabled: true
+traefik_dashboard_user: admin
+traefik_dashboard_auth_salt: "{{ (control_plane_ip ~ traefik_dashboard_user) | hash('sha1') | truncate(22, True, '') }}"
+# Only trust X-Forwarded-* from these proxies (empty = trust none)
+traefik_trusted_ips: []
+traefik_servers_transport_insecure_skip_verify: false

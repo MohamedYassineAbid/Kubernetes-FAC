@@ -1,40 +1,59 @@
 ---
-- name: Render MySQL manifest
-  ansible.builtin.template:
-    src: mysql.yaml.j2
-    dest: /tmp/mysql.yaml
-    mode: "0644"
+- name: Create MySQL and application namespaces
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item.name }}"
+        labels: { app: "{{ item.app }}", team: devops }
+  loop:
+    - { name: "{{ mysql_namespace }}", app: mysql }
+    - { name: "{{ app_namespace }}", app: "{{ app_namespace }}" }
 
-- name: Create Streamlit MySQL secret
-  ansible.builtin.shell: >
-    kubectl --kubeconfig={{ kubeconfig_path }}
-    create secret generic {{ streamlit_mysql_secret_name }}
-    --namespace={{ app_namespace }}
-    --from-literal=user={{ mysql.user }}
-    --from-literal=password={{ mysql.password }}
-    --from-literal=database={{ mysql.database }}
-    --dry-run=client -o yaml | kubectl --kubeconfig={{ kubeconfig_path }} apply -f -
-  args:
-    executable: /bin/bash
-  no_log: true
+# Passwords come from OpenBao (apps/mysql); user/database names from group_vars
+- name: Sync MySQL server credentials from OpenBao
+  ansible.builtin.include_role:
+    name: external_secrets
+    tasks_from: sync
+  vars:
+    es_name: "{{ mysql_secret_name }}"
+    es_namespace: "{{ mysql_namespace }}"
+    es_path: apps/mysql
+    es_properties: { root-password: root-password, password: password }
+    es_static: { user: "{{ mysql_user }}", database: "{{ mysql_database }}" }
+
+- name: Sync application database credentials from OpenBao
+  ansible.builtin.include_role:
+    name: external_secrets
+    tasks_from: sync
+  vars:
+    es_name: "{{ streamlit_mysql_secret_name }}"
+    es_namespace: "{{ app_namespace }}"
+    es_path: apps/mysql
+    es_properties: { password: password }
+    es_static: { user: "{{ mysql_user }}", database: "{{ mysql_database }}" }
 
 - name: Apply MySQL manifest
-  ansible.builtin.command: >
-    kubectl --kubeconfig={{ kubeconfig_path }} apply -f /tmp/mysql.yaml
-  register: mysql_apply
-  changed_when: "'created' in mysql_apply.stdout or 'configured' in mysql_apply.stdout"
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: "{{ lookup('template', 'mysql.yaml.j2') | from_yaml_all | select | list }}"
 
 - name: Wait for MySQL to be ready
   ansible.builtin.command: >
     kubectl --kubeconfig={{ kubeconfig_path }}
     rollout status statefulset/mysql
-    --namespace={{ mysql.namespace }}
-    --timeout=180s
+    --namespace={{ mysql_namespace }}
+    --timeout={{ mysql_rollout_timeout }}
   changed_when: false
 
 - name: Print MySQL access info
   ansible.builtin.debug:
     msg:
-      - "MySQL host (in-cluster): mysql.{{ mysql.namespace }}.svc.cluster.local:3306"
-      - "Database : {{ mysql.database }}"
-      - "User     : {{ mysql.user }}"
+      - "MySQL host (in-cluster): mysql.{{ mysql_namespace }}.svc.cluster.local:3306"
+      - "Database : {{ mysql_database }}"
+      - "User     : {{ mysql_user }}"
+      - "Passwords: OpenBao {{ openbao_kv_mount }}/apps/mysql"

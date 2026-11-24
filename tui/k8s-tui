@@ -1,0 +1,13 @@
+#!/bin/bash
+# Launcher script for Kubernetes-FAC TUI
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+if [ ! -d "venv" ]; then
+    echo "Virtual environment not found. Creating..."
+    python3 -m venv venv
+    ./venv/bin/pip install -r requirements.txt
+fi
+
+./venv/bin/python k8s_fac_tui.py "$@"

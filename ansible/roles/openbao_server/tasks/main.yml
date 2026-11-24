@@ -1,0 +1,21 @@
+---
+# OpenBao on the secrets VM: the single source of truth for every secret.
+# Runs outside the Kubernetes cluster, so rebuilding the cluster never loses secrets.
+- name: Issue TLS certificates
+  ansible.builtin.include_tasks: pki.yml
+
+- name: Install and start OpenBao
+  ansible.builtin.include_tasks: install.yml
+
+- name: Initialise and unseal
+  ansible.builtin.include_tasks: init.yml
+
+- name: Configure secrets engine, policies and logins
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Generate missing secrets
+  ansible.builtin.include_tasks: seed.yml
+  loop: "{{ openbao_generated_secrets }}"
+  loop_control:
+    loop_var: openbao_secret
+    label: "{{ openbao_secret.path }}"

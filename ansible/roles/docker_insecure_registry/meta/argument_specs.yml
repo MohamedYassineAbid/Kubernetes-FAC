@@ -1,0 +1,15 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Allow the Nexus HTTP registry in Docker and CRI-O
+    options:
+      nexus_ip:
+        type: str
+        required: true
+        description: Nexus IP
+      nexus_registry_port:
+        type: int
+        required: true
+        description: Registry port

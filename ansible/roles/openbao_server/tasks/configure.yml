@@ -1,0 +1,327 @@
+---
+# ── KV v2 secrets engine ─────────────────────────────────────
+- name: List secrets engines
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/mounts"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+  register: openbao_mounts
+  no_log: true
+
+- name: Enable KV v2 at {{ openbao_kv_mount }}/
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/mounts/{{ openbao_kv_mount }}"
+    method: POST
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: { type: kv, options: { version: "2" } }
+    status_code: [200, 204]
+  when: (openbao_kv_mount ~ '/') not in openbao_mounts.json.data
+  changed_when: true
+  no_log: true
+
+# ── Kubernetes auth (External Secrets logs in with its ServiceAccount) ──
+- name: List auth methods
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/auth"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+  register: openbao_auth
+  no_log: true
+
+- name: Enable Kubernetes auth
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/auth/kubernetes"
+    method: POST
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: { type: kubernetes }
+    status_code: [200, 204]
+  when: "'kubernetes/' not in openbao_auth.json.data"
+  changed_when: true
+  no_log: true
+
+# OpenBao lives outside the cluster, so it checks ServiceAccount tokens through the
+# Kubernetes TokenReview API using a dedicated reviewer account (auth-delegator only).
+- name: Create the token-reviewer ServiceAccount in the cluster
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      - apiVersion: v1
+        kind: Namespace
+        metadata: { name: "{{ external_secrets_namespace }}" }
+      - apiVersion: v1
+        kind: ServiceAccount
+        metadata: { name: "{{ openbao_reviewer_sa }}", namespace: "{{ external_secrets_namespace }}" }
+      - apiVersion: v1
+        kind: Secret
+        type: kubernetes.io/service-account-token
+        metadata:
+          name: "{{ openbao_reviewer_sa }}"
+          namespace: "{{ external_secrets_namespace }}"
+          annotations: { kubernetes.io/service-account.name: "{{ openbao_reviewer_sa }}" }
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata: { name: "{{ openbao_reviewer_sa }}" }
+        roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator }
+        subjects:
+          - { kind: ServiceAccount, name: "{{ openbao_reviewer_sa }}", namespace: "{{ external_secrets_namespace }}" }
+  delegate_to: "{{ control_plane_host }}"
+
+- name: Read the reviewer token and cluster CA
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    kind: Secret
+    namespace: "{{ external_secrets_namespace }}"
+    name: "{{ openbao_reviewer_sa }}"
+  register: openbao_reviewer
+  until: openbao_reviewer.resources | length > 0 and (openbao_reviewer.resources[0].data.token | default('')) | length > 0
+  retries: 10
+  delay: 3
+  delegate_to: "{{ control_plane_host }}"
+  no_log: true
+
+- name: Read Kubernetes auth config
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/auth/kubernetes/config"
+    ca_path: "{{ openbao_ca }}"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+    status_code: [200, 404]
+  register: openbao_k8s_config
+  no_log: true
+
+- name: Configure Kubernetes auth
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/auth/kubernetes/config"
+    ca_path: "{{ openbao_ca }}"
+    method: POST
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body:
+      kubernetes_host: "{{ openbao_k8s_host }}"
+      kubernetes_ca_cert: "{{ openbao_reviewer.resources[0].data['ca.crt'] | b64decode }}"
+      token_reviewer_jwt: "{{ openbao_reviewer.resources[0].data.token | b64decode }}"
+      disable_local_ca_jwt: true
+    status_code: [200, 204]
+  when: >-
+    openbao_k8s_config.status == 404 or
+    (openbao_k8s_config.json.data.kubernetes_host | default('')) != openbao_k8s_host or
+    (openbao_k8s_config.json.data.kubernetes_ca_cert | default('') | trim) != (openbao_reviewer.resources[0].data['ca.crt'] | b64decode | trim)
+  changed_when: true
+  no_log: true
+  vars:
+    openbao_k8s_host: "https://{{ control_plane_ip }}:6443"
+
+# ── Read-only policy + role for External Secrets ─────────────
+- name: Read External Secrets policy
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/policies/acl/{{ openbao_eso_policy }}"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+    status_code: [200, 404]
+  register: openbao_eso_policy_current
+  no_log: true
+
+- name: Write External Secrets policy
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/policies/acl/{{ openbao_eso_policy }}"
+    method: PUT
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: { policy: "{{ openbao_eso_policy_hcl }}" }
+    status_code: [200, 204]
+  when: >-
+    openbao_eso_policy_current.status == 404 or
+    (openbao_eso_policy_current.json.data.policy | default('')) != openbao_eso_policy_hcl
+  changed_when: true
+  no_log: true
+  vars:
+    openbao_eso_policy_hcl: |
+      # Read-only access to application secrets; nothing else.
+      path "{{ openbao_kv_mount }}/data/apps/*" {
+        capabilities = ["read"]
+      }
+
+- name: Read External Secrets auth role
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/auth/kubernetes/role/{{ openbao_eso_role }}"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+    status_code: [200, 404]
+  register: openbao_eso_role_current
+  no_log: true
+
+- name: Write External Secrets auth role
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/auth/kubernetes/role/{{ openbao_eso_role }}"
+    method: POST
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: "{{ openbao_eso_role_desired }}"
+    status_code: [200, 204]
+  when: >-
+    openbao_eso_role_current.status == 404 or
+    (openbao_eso_role_current.json.data.bound_service_account_names | default([])) != openbao_eso_role_desired.bound_service_account_names or
+    (openbao_eso_role_current.json.data.bound_service_account_namespaces | default([])) != openbao_eso_role_desired.bound_service_account_namespaces or
+    (openbao_eso_role_current.json.data.token_policies | default([])) != openbao_eso_role_desired.token_policies
+  changed_when: true
+  no_log: true
+  vars:
+    openbao_eso_role_desired:
+      bound_service_account_names: ["{{ external_secrets_release }}"]
+      bound_service_account_namespaces: ["{{ external_secrets_namespace }}"]
+      token_policies: ["{{ openbao_eso_policy }}"]
+      token_ttl: 3600
+
+# ── Password policy used to generate every application secret ──
+- name: Read password policy
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/policies/password/{{ openbao_password_policy }}"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+    status_code: [200, 404]
+  register: openbao_password_policy_current
+  no_log: true
+
+# Alphanumeric only: safe in URLs, shells and connection strings
+- name: Write password policy
+  ansible.builtin.uri:
+    ca_path: "{{ openbao_ca }}"
+    url: "{{ openbao_api }}/v1/sys/policies/password/{{ openbao_password_policy }}"
+    method: PUT
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: { policy: "{{ openbao_password_policy_hcl }}" }
+    status_code: [200, 204]
+  when: >-
+    openbao_password_policy_current.status == 404 or
+    (openbao_password_policy_current.json.data.policy | default('')) != openbao_password_policy_hcl
+  changed_when: true
+  no_log: true
+  vars:
+    openbao_password_policy_hcl: |
+      length = {{ openbao_password_length }}
+      rule "charset" {
+        charset   = "abcdefghijklmnopqrstuvwxyz"
+        min-chars = 2
+      }
+      rule "charset" {
+        charset   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        min-chars = 2
+      }
+      rule "charset" {
+        charset   = "0123456789"
+        min-chars = 2
+      }
+
+# ── AppRole for Ansible: read-only access to bootstrap/* ─────
+- name: Read Ansible policy
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/policies/acl/{{ openbao_ansible_policy }}"
+    ca_path: "{{ openbao_ca }}"
+    headers: "{{ openbao_headers }}"
+    return_content: true
+    status_code: [200, 404]
+  register: openbao_ansible_policy_current
+  no_log: true
+
+- name: Write Ansible policy
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/policies/acl/{{ openbao_ansible_policy }}"
+    ca_path: "{{ openbao_ca }}"
+    method: PUT
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: { policy: "{{ openbao_ansible_policy_hcl }}" }
+    status_code: [200, 204]
+  when: >-
+    openbao_ansible_policy_current.status == 404 or
+    (openbao_ansible_policy_current.json.data.policy | default('')) != openbao_ansible_policy_hcl
+  changed_when: true
+  no_log: true
+  vars:
+    openbao_ansible_policy_hcl: |
+      # Ansible reads bootstrap secrets (Traefik, Harbor); nothing else.
+      path "{{ openbao_kv_mount }}/data/bootstrap/*" {
+        capabilities = ["read"]
+      }
+
+- name: Enable AppRole auth
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/auth/approle"
+    ca_path: "{{ openbao_ca }}"
+    method: POST
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body: { type: approle }
+    status_code: [200, 204]
+  when: "'approle/' not in openbao_auth.json.data"
+  changed_when: true
+  no_log: true
+
+- name: Write the Ansible AppRole (short-lived tokens)
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/auth/approle/role/{{ openbao_ansible_role }}"
+    ca_path: "{{ openbao_ca }}"
+    method: POST
+    headers: "{{ openbao_headers }}"
+    body_format: json
+    body:
+      token_policies: ["{{ openbao_ansible_policy }}"]
+      token_ttl: "{{ openbao_ansible_token_ttl }}"
+      token_max_ttl: "{{ openbao_ansible_token_ttl }}"
+      token_bound_cidrs: ["{{ private_network_cidr }}"]
+      secret_id_bound_cidrs: ["{{ private_network_cidr }}"]
+    status_code: [200, 204]
+  changed_when: false   # idempotent upsert of the same definition
+  no_log: true
+
+- name: Check for local AppRole credentials
+  ansible.builtin.stat:
+    path: "{{ openbao_local_dir }}/ansible-approle.json"
+  register: openbao_approle_file
+  delegate_to: localhost
+  become: false
+
+- name: Issue AppRole credentials for Ansible (first run only)
+  when: not openbao_approle_file.stat.exists
+  block:
+    - name: Read the role ID
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/auth/approle/role/{{ openbao_ansible_role }}/role-id"
+        ca_path: "{{ openbao_ca }}"
+        headers: "{{ openbao_headers }}"
+        return_content: true
+      register: openbao_role_id
+      no_log: true
+
+    - name: Create a secret ID
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/auth/approle/role/{{ openbao_ansible_role }}/secret-id"
+        ca_path: "{{ openbao_ca }}"
+        method: POST
+        headers: "{{ openbao_headers }}"
+        return_content: true
+      register: openbao_secret_id
+      changed_when: true
+      no_log: true
+
+    - name: Save AppRole credentials on the Ansible host (0600, git-ignored)
+      ansible.builtin.copy:
+        dest: "{{ openbao_local_dir }}/ansible-approle.json"
+        content: "{{ {'role_id': openbao_role_id.json.data.role_id, 'secret_id': openbao_secret_id.json.data.secret_id} | to_nice_json }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true

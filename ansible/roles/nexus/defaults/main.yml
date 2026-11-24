@@ -1,0 +1,5 @@
+---
+# Kept OUTSIDE the NFS export so cluster PVCs can never reach it
+nexus_data_path: /srv/nexus
+nexus_http_port: 8081
+nexus_uid: 200          # fixed by the sonatype/nexus3 image

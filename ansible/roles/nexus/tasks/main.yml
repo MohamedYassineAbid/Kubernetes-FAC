@@ -7,20 +7,20 @@
 
 - name: Create directory on the NFS path for persistent data
   file:
-    path: "{{ nexus.data_path }}"
+    path: "{{ nexus_data_path }}"
     state: directory
-    owner: "200"
-    group: "200"
+    owner: "{{ nexus_uid }}"
+    group: "{{ nexus_uid }}"
     mode: "0755"
 
 - name: Deploy Nexus as a Docker container
   community.docker.docker_container:
     name: nexus
-    image: sonatype/nexus3:latest
+    image: "{{ nexus_image }}"
     state: started
     restart_policy: unless-stopped
     ports:
-      - "8081:8081"
-      - "{{ nexus.registry_port }}:{{ nexus.registry_port }}"
+      - "{{ nexus_http_port }}:8081"
+      - "{{ nexus_registry_port }}:{{ nexus_registry_port }}"
     volumes:
-      - "{{ nexus.data_path }}:/nexus-data"
+      - "{{ nexus_data_path }}:/nexus-data"

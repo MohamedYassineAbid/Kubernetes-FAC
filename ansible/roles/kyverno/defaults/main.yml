@@ -1,0 +1,9 @@
+---
+kyverno_admission_replicas: 3
+kyverno_background_replicas: 2
+kyverno_controller_resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: 250m, memory: 512Mi }
+kyverno_cleanup_resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: 100m, memory: 256Mi }

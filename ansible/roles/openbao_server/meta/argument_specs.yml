@@ -1,0 +1,161 @@
+---
+# Validated automatically before the role runs.
+argument_specs:
+  main:
+    short_description: 'OpenBao on the secrets VM: the source of truth for every secret'
+    options:
+      openbao_version:
+        type: str
+        required: true
+        description: OpenBao release
+      openbao_deb_sha256:
+        type: dict
+        required: true
+        description: Package checksums per arch
+      internal_ip:
+        type: str
+        required: true
+        description: Secrets VM IP
+      private_network_cidr:
+        type: str
+        required: true
+        description: Network allowed to reach the API
+      openbao_api_port:
+        type: int
+        required: true
+        description: API port
+      openbao_cluster_port:
+        type: int
+        required: true
+        description: Cluster port
+      openbao_config_dir:
+        type: str
+        required: true
+        description: Config dir
+      openbao_tls_dir:
+        type: str
+        required: true
+        description: TLS dir
+      openbao_data_dir:
+        type: str
+        required: true
+        description: Raft data dir
+      openbao_log_dir:
+        type: str
+        required: true
+        description: Audit log dir
+      openbao_cert_days:
+        type: int
+        required: true
+        description: Server cert lifetime
+      openbao_seal_key_id:
+        type: str
+        required: true
+        description: Static seal key id
+      openbao_init_file:
+        type: str
+        required: true
+        description: Root token + recovery key file
+      openbao_pki_dir:
+        type: str
+        required: true
+        description: Local CA dir
+      openbao_local_dir:
+        type: str
+        required: true
+        description: Local break-glass dir
+      openbao_kv_mount:
+        type: str
+        required: true
+        description: KV v2 mount
+      openbao_password_policy:
+        type: str
+        required: true
+        description: Password policy
+      openbao_password_length:
+        type: int
+        required: true
+        description: Generated length
+      openbao_eso_policy:
+        type: str
+        required: true
+        description: Policy for External Secrets
+      openbao_eso_role:
+        type: str
+        required: true
+        description: Kubernetes auth role
+      openbao_ansible_role:
+        type: str
+        required: true
+        description: AppRole for Ansible
+      openbao_ansible_policy:
+        type: str
+        required: true
+        description: Ansible policy
+      openbao_ansible_token_ttl:
+        type: str
+        required: true
+        description: Ansible token lifetime
+      openbao_reviewer_sa:
+        type: str
+        required: true
+        description: Token reviewer ServiceAccount
+      openbao_generated_secrets:
+        type: list
+        required: true
+        description: 'Secrets to generate: [{path, fields}]'
+      openbao_ready_retries:
+        type: int
+        required: true
+        description: API wait retries
+      external_secrets_release:
+        type: str
+        required: true
+        description: ESO ServiceAccount name
+      external_secrets_namespace:
+        type: str
+        required: true
+        description: ESO namespace
+      control_plane_host:
+        type: str
+        required: true
+        description: Control plane inventory name
+      control_plane_ip:
+        type: str
+        required: true
+        description: API server IP
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig
+  read:
+    short_description: Read one OpenBao field into a fact as Ansible's AppRole
+    options:
+      ob_path:
+        type: str
+        required: true
+        description: Path under the KV mount
+      ob_field:
+        type: str
+        required: true
+        description: Field to read
+      ob_fact:
+        type: str
+        required: true
+        description: Fact to set
+      openbao_url:
+        type: str
+        required: true
+        description: OpenBao URL
+      openbao_pki_dir:
+        type: str
+        required: true
+        description: Local CA dir
+      openbao_local_dir:
+        type: str
+        required: true
+        description: Local AppRole dir
+      openbao_kv_mount:
+        type: str
+        required: true
+        description: KV v2 mount

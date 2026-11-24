@@ -1,0 +1,17 @@
+---
+- name: Add metrics-server Helm repo
+  kubernetes.core.helm_repository:
+    name: metrics-server
+    repo_url: https://kubernetes-sigs.github.io/metrics-server
+
+- name: Deploy metrics-server
+  kubernetes.core.helm:
+    name: metrics-server
+    chart_ref: metrics-server/metrics-server
+    chart_version: "{{ metrics_server_chart_version }}"
+    release_namespace: "{{ metrics_server_namespace }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+    update_repo_cache: true
+    wait: true
+    values:
+      args: "{{ ['--kubelet-insecure-tls'] if metrics_server_kubelet_insecure_tls | bool else [] }}"

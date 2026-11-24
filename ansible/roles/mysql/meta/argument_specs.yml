@@ -1,0 +1,63 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: MySQL (passwords from OpenBao)
+    options:
+      mysql_image:
+        type: str
+        required: true
+        description: Image
+      mysql_namespace:
+        type: str
+        required: true
+        description: Namespace
+      app_namespace:
+        type: str
+        required: true
+        description: Application namespace
+      mysql_database:
+        type: str
+        required: true
+        description: Database
+      mysql_user:
+        type: str
+        required: true
+        description: Application user
+      mysql_secret_name:
+        type: str
+        required: true
+        description: Server Secret
+      streamlit_mysql_secret_name:
+        type: str
+        required: true
+        description: App Secret
+      mysql_storage_size:
+        type: str
+        required: true
+        description: PVC size
+      mysql_max_connections:
+        type: int
+        required: true
+        description: max_connections
+      mysql_innodb_buffer_pool_size:
+        type: str
+        required: true
+        description: Buffer pool size
+      mysql_resources:
+        type: dict
+        required: true
+        description: Pod resources
+      mysql_rollout_timeout:
+        type: str
+        required: true
+        description: Rollout timeout
+      storage_class_name:
+        type: str
+        required: true
+        description: StorageClass
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path

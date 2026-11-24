@@ -1,6 +1,6 @@
 ---
 - name: Get all pods status
-  command: kubectl get pods --all-namespaces --no-headers --kubeconfig=/etc/kubernetes/admin.conf
+  command: kubectl get pods --all-namespaces --no-headers --kubeconfig={{ kubeconfig_path }}
   register: pods_status
   until: >-
     pods_status.stdout_lines | 

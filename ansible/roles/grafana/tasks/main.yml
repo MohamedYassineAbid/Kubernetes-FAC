@@ -1,37 +1,55 @@
 ---
-- name: Add Grafana Helm repository
-  shell: helm repo add grafana https://grafana.github.io/helm-charts
+# The chart moved from grafana/helm-charts (deprecated Jan 2026) to grafana-community.
+- name: Add Grafana community Helm repository
+  kubernetes.core.helm_repository:
+    name: grafana-community
+    repo_url: "{{ grafana_chart_repo }}"
 
-- name: Update Helm repositories
-  shell: helm repo update
+# Admin credentials come from OpenBao (apps/grafana), never from Ansible
+- name: Sync Grafana admin credentials from OpenBao
+  ansible.builtin.include_role:
+    name: external_secrets
+    tasks_from: sync
+  vars:
+    es_name: "{{ grafana_admin_secret_name }}"
+    es_namespace: "{{ monitoring_namespace }}"
+    es_path: apps/grafana
+    es_properties: { admin-password: admin-password }
+    es_static: { admin-user: "{{ grafana_admin_user }}" }
 
 - name: Deploy Grafana with Traefik Ingress and Prometheus Data Source
-  shell: |
-    cat <<EOF > /tmp/grafana-values.yml
-    adminUser: {{ grafana_admin_user }}
-    adminPassword: {{ grafana_admin_password }}
-    persistence:
-      type: pvc
-      enabled: true
-      storageClassName: nfs
-      accessModes:
-        - ReadWriteOnce
-      size: 5Gi
-    ingress:
-      enabled: true
-      ingressClassName: traefik
-      hosts:
-        - {{ grafana_host }}
-    datasources:
-      datasources.yaml:
-        apiVersion: 1
-        datasources:
-        - name: Prometheus
-          type: prometheus
-          url: http://prometheus-server.monitoring.svc.cluster.local
-          access: proxy
-          isDefault: true
-    EOF
-    helm upgrade --install grafana grafana/grafana \
-      --namespace monitoring \
-      -f /tmp/grafana-values.yml
+  kubernetes.core.helm:
+    name: grafana
+    chart_ref: grafana-community/grafana
+    chart_version: "{{ grafana_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    kubeconfig: "{{ kubeconfig_path }}"
+    update_repo_cache: true
+    wait: true
+    values:
+      admin:
+        existingSecret: "{{ grafana_admin_secret_name }}"
+        userKey: admin-user
+        passwordKey: admin-password
+      persistence:
+        type: pvc
+        enabled: true
+        storageClassName: "{{ storage_class_name }}"
+        accessModes:
+          - ReadWriteOnce
+        size: "{{ grafana_storage_size }}"
+      ingress:
+        enabled: true
+        ingressClassName: "{{ traefik_ingress_class }}"
+        hosts:
+          - "{{ grafana_host }}"
+      datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              url: "{{ prometheus_server_url }}"
+              access: proxy
+              isDefault: true

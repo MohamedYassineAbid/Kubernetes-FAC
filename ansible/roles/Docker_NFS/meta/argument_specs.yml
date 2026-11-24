@@ -1,0 +1,19 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Docker and the NFS export on the services VM
+    options:
+      nfs_path:
+        type: str
+        required: true
+        description: Exported directory
+      nfs_export_clients:
+        type: list
+        required: true
+        description: IPs allowed to mount
+      ansible_user:
+        type: str
+        required: true
+        description: User added to the docker group

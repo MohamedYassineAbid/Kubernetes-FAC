@@ -1,0 +1,59 @@
+---
+- name: Add External Secrets Helm repo
+  kubernetes.core.helm_repository:
+    name: external-secrets
+    repo_url: https://charts.external-secrets.io
+
+- name: Deploy External Secrets Operator
+  kubernetes.core.helm:
+    name: "{{ external_secrets_release }}"
+    chart_ref: external-secrets/external-secrets
+    chart_version: "{{ external_secrets_chart_version }}"
+    release_namespace: "{{ external_secrets_namespace }}"
+    create_namespace: true
+    kubeconfig: "{{ kubeconfig_path }}"
+    update_repo_cache: true
+    wait: true
+    values:
+      installCRDs: true
+
+# Logs in to OpenBao on the secrets VM with the operator's own ServiceAccount
+# (Kubernetes auth, checked by OpenBao through TokenReview). OpenBao binds it to a
+# read-only policy on kv/apps/*. TLS is verified against the lab CA only.
+- name: Create the OpenBao ClusterSecretStore
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: external-secrets.io/v1
+      kind: ClusterSecretStore
+      metadata:
+        name: "{{ secret_store_name }}"
+      spec:
+        provider:
+          vault:
+            server: "{{ openbao_url }}"
+            caBundle: "{{ lookup('file', openbao_pki_dir ~ '/ca.crt') | b64encode }}"
+            path: "{{ openbao_kv_mount }}"
+            version: v2
+            auth:
+              kubernetes:
+                mountPath: kubernetes
+                role: "{{ openbao_eso_role }}"
+                serviceAccountRef:
+                  name: "{{ external_secrets_release }}"
+                  namespace: "{{ external_secrets_namespace }}"
+
+- name: Wait for the ClusterSecretStore to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: external-secrets.io/v1
+    kind: ClusterSecretStore
+    name: "{{ secret_store_name }}"
+  register: external_secrets_store
+  until: >-
+    external_secrets_store.resources | length > 0 and
+    (external_secrets_store.resources[0].status.conditions | default([])
+     | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | list) == ['True']
+  retries: "{{ external_secrets_sync_retries }}"
+  delay: 6

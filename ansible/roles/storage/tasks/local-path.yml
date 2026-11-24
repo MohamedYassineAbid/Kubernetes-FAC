@@ -1,0 +1,21 @@
+---
+# Node-local folders (storage_backend: local-path). Data lives on the node that runs the pod.
+- name: Deploy local-path-provisioner
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f
+    https://raw.githubusercontent.com/rancher/local-path-provisioner/{{ local_path_provisioner_version }}/deploy/local-path-storage.yaml
+  register: local_path_apply
+  changed_when: "'created' in local_path_apply.stdout or 'configured' in local_path_apply.stdout"
+
+- name: Make local-path the default StorageClass
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} patch storageclass {{ storage_class_name }}
+    -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "true"}}}'
+  register: local_path_default
+  changed_when: "'no change' not in local_path_default.stdout"
+
+- name: Wait for local-path-provisioner rollout
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ local_path_namespace }}
+    rollout status deployment/local-path-provisioner --timeout={{ storage_rollout_timeout }}
+  changed_when: false

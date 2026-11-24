@@ -7,25 +7,25 @@
 
 - name: Create directory on the NFS path for persistent data
   file:
-    path: "{{ gitea.data_path }}"
+    path: "{{ gitea_data_path }}"
     state: directory
-    owner: "1000"
-    group: "1000"
+    owner: "{{ gitea_uid }}"
+    group: "{{ gitea_uid }}"
     mode: "0755"
 
 - name: Deploy Gitea as a Docker container
   community.docker.docker_container:
     name: gitea
-    image: gitea/gitea:latest
+    image: "{{ gitea_image }}"
     state: started
     restart_policy: unless-stopped
     ports:
-      - "3000:3000"
-      - "2224:22"
+      - "{{ gitea_http_port }}:3000"
+      - "{{ gitea_ssh_port }}:22"
     volumes:
-      - "{{ gitea.data_path }}:/data"
+      - "{{ gitea_data_path }}:/data"
       - "/etc/timezone:/etc/timezone:ro"
       - "/etc/localtime:/etc/localtime:ro"
     env:
-      USER_UID: "1000"
-      USER_GID: "1000"
+      USER_UID: "{{ gitea_uid }}"
+      USER_GID: "{{ gitea_uid }}"

@@ -15,7 +15,7 @@
     dest: /etc/docker/daemon.json
     content: |
       {
-        "insecure-registries": ["{{ nexus.ip }}:{{ nexus.registry_port }}"]
+        "insecure-registries": ["{{ nexus_ip }}:{{ nexus_registry_port }}"]
       }
   when: docker_bin.stat.exists
   notify: restart docker
@@ -37,7 +37,7 @@
     dest: /etc/containers/registries.conf.d/99-nexus-insecure.conf
     content: |
       [[registry]]
-      location = "{{ nexus.ip }}:{{ nexus.registry_port }}"
+      location = "{{ nexus_ip }}:{{ nexus_registry_port }}"
       insecure = true
   when: crio_bin.stat.exists
   notify: restart crio

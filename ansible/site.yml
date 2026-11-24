@@ -1,5 +1,41 @@
 ---
+- name: Preflight - validate the deploy switches
+  hosts: localhost
+  gather_facts: false
+  become: false
+  tags: [always]
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: Check that every enabled layer has what it needs
+      ansible.builtin.assert:
+        that:
+          - storage_backend in ['longhorn', 'local-path', 'nfs']
+          - storage_backend != 'nfs' or (services_vm_enabled | bool)
+          - not (deploy_jenkins | bool) or (deploy_storage | bool and deploy_secrets | bool)
+          - not (deploy_monitoring | bool) or (deploy_storage | bool and deploy_secrets | bool)
+          - not (deploy_mysql | bool) or (deploy_storage | bool and deploy_secrets | bool)
+          - not (deploy_traefik | bool) or (deploy_secrets | bool)
+          - not (services_vm_enabled | bool) or (deploy_secrets | bool)
+        fail_msg: >-
+          A switch in hosts.yml needs another one turned on: jenkins, monitoring and mysql
+          need storage and secrets; traefik and the services VM need secrets;
+          storage_backend must be longhorn, local-path or nfs, and nfs needs services_vm_enabled.
+        quiet: true
 
+- name: Group hosts that are enabled in the inventory
+  hosts: all
+  gather_facts: false
+  tags: [always]
+  tasks:
+    - name: Put disabled services VMs in "disabled", everything else in "active"
+      ansible.builtin.group_by:
+        key: >-
+          {{ 'disabled' if (inventory_hostname in groups['service_nodes'] and not services_vm_enabled | bool)
+             or (inventory_hostname in groups['secrets_nodes'] and not deploy_secrets | bool) else 'active' }}
+
+# ── Cluster ─────────────────────────────────────────────────
 - name: Common Kubernetes prerequisites
   hosts: k8s_cluster
   become: true
@@ -19,93 +55,110 @@
   roles:
     - { role: worker, tags: ["init"] }
 
-- name: waiting
-  hosts: controlplane
+- name: Wait for system pods
+  hosts: control_nodes
   become: true
-  serial: 1
   roles:
     - { role: waiting, tags: ["init"] }
 
-- name: Install helm 
-  hosts: all
+- name: Install Helm and metrics-server
+  hosts: control_nodes
   become: true
   roles:
-    -  { role: helm, tags: ["helm"] }
+    - { role: helm, tags: ["helm", "init"] }
+    - { role: metrics_server, tags: ["metrics", "init"] }
 
+# ── Secrets VM (outside the cluster) ────────────────────────
+- name: OpenBao on the secrets VM (source of truth for every secret)
+  hosts: secrets_nodes:&active
+  become: true
+  roles:
+    - { role: openbao_server, tags: ["openbao", "secrets", "traefik", "jenkins", "grafana", "mysql", "harbor"] }
 
-- name: Docker and nfs configuration
-  hosts: services
+# ── Storage ─────────────────────────────────────────────────
+- name: Docker and NFS on the services VM
+  hosts: service_nodes:&active
   become: true
   roles:
     - { role: Docker_NFS, tags: ["dockernfs"] }
-  
-- name: jenkins installation
-  hosts: controlplane
+
+- name: Cluster storage (Longhorn, local-path or NFS)
+  hosts: control_nodes
   become: true
   roles:
-    - { role: jenkins, tags: ["jenkins"] }
+    - { role: storage, tags: ["storage", "jenkins", "prometheus", "grafana", "mysql"], when: deploy_storage | bool }
 
-- name: gitlab installation
-  hosts: services
+# ── Platform: policy first, then secrets ────────────────────
+- name: Kyverno policies (enforced before any workload is installed)
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: kyverno, tags: ["kyverno"], when: deploy_kyverno | bool }
+
+- name: External Secrets (syncs OpenBao secrets into the cluster)
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: external_secrets, tags: ["openbao", "secrets", "jenkins", "grafana", "mysql"], when: deploy_secrets | bool }
+
+- name: Traefik ingress
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: traefik, tags: ["traefik"], when: deploy_traefik | bool }
+
+# ── Applications ────────────────────────────────────────────
+- name: Jenkins
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: jenkins, tags: ["jenkins"], when: deploy_jenkins | bool }
+
+- name: Prometheus
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: prometheus, tags: ["prometheus"], when: deploy_monitoring | bool }
+
+- name: Grafana
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: grafana, tags: ["grafana"], when: deploy_monitoring | bool }
+
+- name: MySQL
+  hosts: control_nodes
+  become: true
+  roles:
+    - { role: mysql, tags: ["mysql"], when: deploy_mysql | bool }
+
+# ── Services VM ─────────────────────────────────────────────
+- name: GitLab
+  hosts: service_nodes:&active
   become: true
   roles:
     - { role: gitlab, tags: ["gitlab"] }
 
-
-- name: Container Insecure Registry setup (Docker & CRI-O)
-  hosts: all
+- name: Container insecure registry setup (Docker & CRI-O)
+  hosts: all:&active
   become: true
   roles:
-    - { role: docker_insecure_registry, tags: ["insecure", "nexus"] }
+    - { role: docker_insecure_registry, tags: ["insecure", "nexus"], when: services_vm_enabled | bool }
 
-- name: Nexus installation
-  hosts: services
+- name: Nexus
+  hosts: service_nodes:&active
   become: true
   roles:
     - { role: nexus, tags: ["nexus"] }
 
-
-
-- name: Gitea installation
-  hosts: services
+- name: Gitea
+  hosts: service_nodes:&active
   become: true
   roles:
     - { role: gitea, tags: ["gitea"] }
 
-- name: Harbor installation
-  hosts: services
+- name: Harbor
+  hosts: service_nodes:&active
   become: true
   roles:
     - { role: harbor, tags: ["harbor"] }
-
-
-- name: keyverno installation & config
-  hosts: controlplane
-  become: true
-  roles:
-    - { role: keyverno, tags: ["kyverno"] }
-
-
-- name: Traefik ingress installation
-  hosts: controlplane
-  become: true
-  roles:
-    - { role: traefik, tags: ["traefik"] }
-
-- name: Prometheus installation
-  hosts: controlplane
-  become: true
-  roles:
-    - { role: prometheus, tags: ["prometheus"] }
-
-- name: Grafana installation
-  hosts: controlplane
-  become: true
-  roles:
-    - { role: grafana, tags: ["grafana"] }
-
-- name: MySQL installation
-  hosts: controlplane
-  become: true
-  roles:
-    - { role: mysql, tags: ["mysql"] }  

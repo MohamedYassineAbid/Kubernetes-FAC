@@ -1,0 +1,90 @@
+---
+# Validated automatically before the role runs.
+argument_specs:
+  main:
+    short_description: 'Default StorageClass: NFS provisioner or local-path'
+    options:
+      services_vm_enabled:
+        type: bool
+        required: false
+        description: Use NFS on the services VM
+      storage_class_name:
+        type: str
+        required: true
+        description: StorageClass name
+      storage_namespace:
+        type: str
+        required: false
+        description: Provisioner namespace
+      nfs_server:
+        type: str
+        required: false
+        description: NFS server
+      nfs_path:
+        type: str
+        required: false
+        description: NFS export path
+      nfs_provisioner_chart_version:
+        type: str
+        required: false
+        description: Chart version
+      storage_nfs_mount_options:
+        type: list
+        required: false
+        description: NFS mount options
+      local_path_provisioner_version:
+        type: str
+        required: false
+        description: local-path version
+      local_path_namespace:
+        type: str
+        required: false
+        description: local-path namespace
+      storage_rollout_timeout:
+        type: str
+        required: true
+        description: Rollout timeout, e.g. 120s
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path
+      storage_backend:
+        type: str
+        required: true
+        choices:
+        - longhorn
+        - local-path
+        - nfs
+        description: Storage backend
+      longhorn_chart_version:
+        type: str
+        required: true
+        description: Longhorn chart version
+      longhorn_namespace:
+        type: str
+        required: true
+        description: Longhorn namespace
+      longhorn_replica_count:
+        type: int
+        required: true
+        description: Copies of each volume
+      longhorn_data_path:
+        type: str
+        required: true
+        description: Data folder on each node
+      longhorn_reserved_percentage:
+        type: int
+        required: true
+        description: Disk space kept free (%)
+      longhorn_csi_replicas:
+        type: int
+        required: true
+        description: CSI sidecar replicas
+      longhorn_ui_replicas:
+        type: int
+        required: true
+        description: UI replicas
+      longhorn_install_timeout:
+        type: str
+        required: true
+        description: Helm wait timeout

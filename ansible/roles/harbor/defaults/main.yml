@@ -1,0 +1,6 @@
+---
+harbor_install_dir: /opt/harbor
+harbor_hostname: "{{ services_ip }}"
+harbor_http_port: 8880        # port 80 on the services node is taken by GitLab
+harbor_url: "{{ harbor_hostname }}:{{ harbor_http_port }}"
+harbor_data_volume: /data

@@ -1,0 +1,9 @@
+---
+mysql_secret_name: mysql-secret
+mysql_storage_size: 5Gi
+mysql_max_connections: 200
+mysql_innodb_buffer_pool_size: 128M
+mysql_rollout_timeout: 180s
+mysql_resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }

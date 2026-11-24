@@ -5,26 +5,19 @@
   register: kubelet_conf
 
 - name: Join the Kubernetes cluster
-  command: "{{ hostvars['controlplane']['kubeadm_join_command'] }} --node-name {{ inventory_hostname }}"
+  command: "{{ hostvars[control_plane_host]['kubeadm_join_command'] }} --node-name {{ inventory_hostname }}"
   when: not kubelet_conf.stat.exists
+  no_log: true
 
-- name: Create .kube directory for {{ ansible_user }}
+# Workers deliberately get NO admin kubeconfig: a compromised worker must not
+# mean a compromised cluster. Use kubectl from the control plane or the host.
+- name: Remove any admin kubeconfig left by older versions of this playbook
   file:
-    path: /home/{{ ansible_user }}/.kube
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0755"
-
-- name: Copy admin.conf to {{ ansible_user }} kubeconfig
-  copy:
-    src: "{{ playbook_dir }}/fetched/admin.conf"
-    dest: /home/{{ ansible_user }}/.kube/config
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0644"
+    path: /home/{{ ansible_user }}/.kube/config
+    state: absent
 
 - name: Label node as worker
-  shell: "kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite --kubeconfig=/home/{{ ansible_user }}/.kube/config || kubectl label node $(hostname | tr 'A-Z' 'a-z') node-role.kubernetes.io/worker=worker --overwrite --kubeconfig=/home/{{ ansible_user }}/.kube/config"
+  command: kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=worker --overwrite --kubeconfig={{ kubeconfig_path }}
+  delegate_to: "{{ control_plane_host }}"
   register: label_result
-  changed_when: "'labeled' in label_result.stdout"
+  changed_when: "'not labeled' not in label_result.stdout"

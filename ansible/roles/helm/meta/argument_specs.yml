@@ -1,0 +1,11 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Install a pinned, checksum-verified Helm
+    options:
+      helm_version:
+        type: str
+        required: true
+        description: Helm release tag, e.g. v3.22.1

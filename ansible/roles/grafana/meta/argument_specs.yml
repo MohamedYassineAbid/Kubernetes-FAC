@@ -1,0 +1,51 @@
+---
+# Validated automatically before the role runs: a missing or mistyped
+# variable fails here instead of half-way through a deployment.
+argument_specs:
+  main:
+    short_description: Grafana (admin credentials from OpenBao)
+    options:
+      grafana_chart_repo:
+        type: str
+        required: true
+        description: Helm repo URL
+      grafana_chart_version:
+        type: str
+        required: true
+        description: Chart version
+      monitoring_namespace:
+        type: str
+        required: true
+        description: Namespace
+      grafana_storage_size:
+        type: str
+        required: true
+        description: PVC size
+      grafana_admin_user:
+        type: str
+        required: true
+        description: Admin user
+      grafana_admin_secret_name:
+        type: str
+        required: true
+        description: Secret synced from OpenBao
+      grafana_host:
+        type: str
+        required: true
+        description: Ingress host
+      prometheus_server_url:
+        type: str
+        required: true
+        description: Datasource URL
+      traefik_ingress_class:
+        type: str
+        required: true
+        description: IngressClass
+      storage_class_name:
+        type: str
+        required: true
+        description: StorageClass
+      kubeconfig_path:
+        type: str
+        required: true
+        description: admin kubeconfig path

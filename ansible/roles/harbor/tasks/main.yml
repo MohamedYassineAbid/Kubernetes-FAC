@@ -1,4 +1,13 @@
 ---
+- name: Read the Harbor admin password from OpenBao
+  ansible.builtin.include_role:
+    name: openbao_server
+    tasks_from: read
+  vars:
+    ob_path: bootstrap/harbor
+    ob_field: admin-password
+    ob_fact: harbor_admin_password
+
 - name: Download Harbor online installer
   get_url:
     url: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-online-installer-{{ harbor_version }}.tgz"
@@ -8,79 +17,72 @@
 - name: Extract Harbor archive
   unarchive:
     src: "/tmp/harbor-online-installer-{{ harbor_version }}.tgz"
-    dest: "/opt/"
+    dest: "{{ harbor_install_dir | dirname }}"
     remote_src: yes
+    creates: "{{ harbor_install_dir }}/install.sh"
 
-- name: Copy harbor.yml from template
+# force: false -> seed harbor.yml once; the edits below then converge it
+- name: Create harbor.yml from template (first run only)
   copy:
     src: "{{ harbor_install_dir }}/harbor.yml.tmpl"
     dest: "{{ harbor_install_dir }}/harbor.yml"
     remote_src: yes
+    force: false
+    mode: "0600"
+  register: harbor_cfg_seed
 
-- name: Set harbor hostname
+- name: Configure harbor.yml
   replace:
     path: "{{ harbor_install_dir }}/harbor.yml"
-    regexp: '^hostname: .*'
-    replace: "hostname: {{ harbor_hostname }}"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  loop:
+    - { regexp: '^hostname: .*', replace: "hostname: {{ harbor_hostname }}" }
+    - { regexp: '^(\s*)port: 80$', replace: '\1port: {{ harbor_http_port }}' }
+    - { regexp: '^data_volume: .*', replace: "data_volume: {{ harbor_data_volume }}" }
+    # HTTPS block disabled (no certificates provisioned yet)
+    - { regexp: '^(https:.*)$', replace: '#\1' }
+    - { regexp: '^(\s*port: 443.*)$', replace: '#\1' }
+    - { regexp: '^(\s*certificate: .*)$', replace: '#\1' }
+    - { regexp: '^(\s*private_key: .*)$', replace: '#\1' }
+  loop_control:
+    label: "{{ item.regexp }}"
+  register: harbor_cfg_edits
 
 - name: Set admin password
   replace:
     path: "{{ harbor_install_dir }}/harbor.yml"
     regexp: '^harbor_admin_password: .*'
     replace: "harbor_admin_password: {{ harbor_admin_password }}"
+  register: harbor_cfg_password
+  no_log: true
 
-- name: Set data volume
-  replace:
-    path: "{{ harbor_install_dir }}/harbor.yml"
-    regexp: '^data_volume: .*'
-    replace: "data_volume: {{ harbor_data_volume }}"
+- name: Check whether Harbor is running
+  command: docker compose ps --status running --quiet
+  args:
+    chdir: "{{ harbor_install_dir }}"
+  register: harbor_running
+  changed_when: false
+  failed_when: false
 
-- name: Comment out https block
-  replace:
-    path: "{{ harbor_install_dir }}/harbor.yml"
-    regexp: '^(https:.*)$'
-    replace: '#\1'
-
-- name: Comment out https port
-  replace:
-    path: "{{ harbor_install_dir }}/harbor.yml"
-    regexp: '^(\s*port: 443.*)$'
-    replace: '#\1'
-
-- name: Comment out ssl certificate line
-  replace:
-    path: "{{ harbor_install_dir }}/harbor.yml"
-    regexp: '^(\s*certificate: .*)$'
-    replace: '#\1'
-
-- name: Comment out ssl private_key line
-  replace:
-    path: "{{ harbor_install_dir }}/harbor.yml"
-    regexp: '^(\s*private_key: .*)$'
-    replace: '#\1'
-
+# install.sh regenerates the compose project and starts it
 - name: Run Harbor install script
   command: ./install.sh
   args:
     chdir: "{{ harbor_install_dir }}"
   register: install_output
-  changed_when: install_output.rc == 0
+  when: >-
+    harbor_cfg_seed.changed or harbor_cfg_edits.changed or harbor_cfg_password.changed
+    or harbor_running.rc != 0 or (harbor_running.stdout | trim | length == 0)
 
 - name: Show install output
   debug:
     var: install_output.stdout_lines
-
-- name: Start Harbor with docker compose
-  command: docker compose up -d
-  args:
-    chdir: "{{ harbor_install_dir }}"
-  register: harbor_start
-  changed_when: harbor_start.rc == 0
+  when: install_output is not skipped
 
 - name: Wait for Harbor to be ready
   uri:
-    url: "http://{{ harbor_hostname }}/api/v2.0/ping"
-    validate_certs: false
+    url: "http://{{ harbor_url }}/api/v2.0/ping"
     status_code: 200
   register: harbor_ping
   retries: 10
@@ -89,4 +91,4 @@
 
 - name: Harbor is ready
   debug:
-    msg: "Harbor is up and running at http://{{ harbor_hostname }}"
+    msg: "Harbor is up and running at http://{{ harbor_url }}"

@@ -1,0 +1,11 @@
+---
+gitlab_external_host: "{{ services_ip }}"
+gitlab_http_port: 80
+gitlab_ssh_port: 2222
+gitlab_registry_port: 5050
+gitlab_data_dir: /srv/gitlab
+gitlab_compose_dir: /opt/gitlab
+gitlab_puma_workers: 2
+gitlab_sidekiq_concurrency: 5
+gitlab_postgres_shared_buffers: 256MB
+gitlab_shm_size: 256m

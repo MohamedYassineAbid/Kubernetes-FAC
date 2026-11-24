@@ -1,0 +1,34 @@
+---
+# ─────────────────────────────────────────────────────────────
+#  Every pinned version in one place. Bump deliberately (never float / :latest).
+# ─────────────────────────────────────────────────────────────
+
+# Kubernetes 1.36 is supported upstream until ~mid-2027 (1.34 went EOL 2026-10-27).
+# CRI-O minor must match the Kubernetes minor (common role uses kubernetes_version_short).
+kubernetes_version: "1.36.6-*"
+kubernetes_version_short: "1.36"
+calico_version: "3.33.0"            # tested against k8s 1.35–1.37
+helm_version: "v3.22.1"
+openbao_version: "2.7.2"            # secrets VM (Debian package, checksum-verified)
+openbao_deb_sha256:
+  amd64: "42bd0890a8e2060e5f29410ea828ee047aa2de21028045731a0516d5a532928c"
+  arm64: "f9f40f906aaf673f536e59e45be3f485408b36cdb75697e89bb5201b8545dc46"
+local_path_provisioner_version: "v0.0.30"
+
+# Helm charts
+metrics_server_chart_version: "3.14.0"      # metrics-server 0.9.0
+nfs_provisioner_chart_version: "4.0.18"
+longhorn_chart_version: "1.13.0"            # supports Kubernetes >= 1.34
+external_secrets_chart_version: "2.14.0"
+kyverno_chart_version: "3.9.2"              # Kyverno 1.19.2
+jenkins_chart_version: "5.11.0"
+prometheus_chart_version: "29.45.1"
+grafana_chart_version: "14.4.0"             # grafana-community repo
+
+# Container images
+traefik_image: "traefik:v3.7.17"
+mysql_image: "mysql:8.4.13"                 # 8.0 went EOL April 2026; 8.4 is LTS
+gitlab_image: "gitlab/gitlab-ce:19.5.3-ce.0"
+nexus_image: "sonatype/nexus3:3.98.1"
+gitea_image: "gitea/gitea:28.3.0"
+harbor_version: "v2.14.2"

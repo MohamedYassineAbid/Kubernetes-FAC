@@ -1,0 +1,32 @@
+# Managed by Ansible (openbao_server role)
+ui            = true
+disable_mlock = true   # recommended with integrated (raft) storage
+api_addr      = "https://{{ internal_ip }}:{{ openbao_api_port }}"
+cluster_addr  = "https://{{ internal_ip }}:{{ openbao_cluster_port }}"
+
+listener "tcp" {
+  address         = "0.0.0.0:{{ openbao_api_port }}"
+  cluster_address = "0.0.0.0:{{ openbao_cluster_port }}"
+  tls_cert_file   = "{{ openbao_tls_dir }}/server.crt"
+  tls_key_file    = "{{ openbao_tls_dir }}/server.key"
+  tls_min_version = "tls12"
+}
+
+# Integrated storage: snapshots with `bao operator raft snapshot save`,
+# and more nodes can join later for high availability.
+storage "raft" {
+  path    = "{{ openbao_data_dir }}"
+  node_id = "{{ inventory_hostname }}"
+}
+
+seal "static" {
+  current_key_id = "{{ openbao_seal_key_id }}"
+  current_key    = "file://{{ openbao_config_dir }}/unseal.key"
+}
+
+audit "file" "to-file" {
+  description = "Every request and response, secrets HMAC'd"
+  options {
+    file_path = "{{ openbao_log_dir }}/audit.log"
+  }
+}

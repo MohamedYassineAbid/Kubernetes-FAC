@@ -1,0 +1,28 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-nfs-volumes
+  annotations:
+    policies.kyverno.io/description: >-
+      An inline `nfs:` volume mounts any path of the NFS export directly, bypassing
+      the PVC boundary (and, with no_root_squash, as root). Workloads must use PVCs
+      from the StorageClass instead. The provisioner's own namespace is excluded.
+spec:
+  background: true
+  rules:
+    - name: no-inline-nfs
+      match:
+        any:
+        - resources:
+            kinds: [Pod]
+      exclude:
+        any:
+        - resources:
+            namespaces: {{ kyverno_excluded_namespaces | to_json }}
+      validate:
+        failureAction: {{ kyverno_validation_failure_action }}
+        message: "Inline NFS volumes are not allowed. Use a PersistentVolumeClaim."
+        pattern:
+          spec:
+            =(volumes):
+              - X(nfs): "null"

@@ -1,0 +1,34 @@
+---
+# Reusable: read one field from OpenBao into a fact, as Ansible's AppRole.
+#   include_role: { name: openbao_server, tasks_from: read }
+#   vars: ob_path (under kv/), ob_field, ob_fact
+# Runs on the Ansible host over TLS; the token lives 15 minutes and is never written to disk.
+- name: Log in to OpenBao as Ansible
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/auth/approle/login"
+    ca_path: "{{ openbao_pki_dir }}/ca.crt"
+    method: POST
+    body_format: json
+    body: "{{ lookup('file', openbao_local_dir ~ '/ansible-approle.json') | from_json }}"
+    return_content: true
+  register: openbao_login
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Read {{ ob_path }}
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/{{ openbao_kv_mount }}/data/{{ ob_path }}"
+    ca_path: "{{ openbao_pki_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_login.json.auth.client_token }}"
+    return_content: true
+  register: openbao_read
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Set {{ ob_fact }}
+  ansible.builtin.set_fact:
+    "{{ ob_fact }}": "{{ openbao_read.json.data.data[ob_field] }}"
+  no_log: true
