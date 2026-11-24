@@ -1,11 +1,11 @@
 
 # Kubernetes-FAC
 
-A reproducible, modular Kubernetes lab for VirtualBox: provision the VMs with Vagrant, configure the cluster and optional platform services with Ansible, and manage it from a terminal UI.
+A reproducible Kubernetes lab for VirtualBox: provision the VMs with Vagrant, then run individual Ansible roles from Kuboos templates or with role-specific tags.
 
 ## Overview
 
-Kubernetes-FAC creates a private-network Kubernetes environment that is useful for learning, demonstrations, and platform experiments. The base topology is a control plane and two workers; OpenBao, NFS/container services, ingress, observability, and other optional components can be added with feature switches.
+Kubernetes-FAC creates a private-network Kubernetes environment that is useful for learning, demonstrations, and platform experiments. The base topology is a control plane and two workers. Run each role explicitly with its dedicated Ansible tag; optional VM settings describe topology only.
 
 > [!NOTE]
 > The lab is intentionally configurable and idempotent. Keep generated credentials and kubeconfig files under `ansible/fetched/`; that directory is git-ignored.
@@ -15,11 +15,11 @@ Kubernetes-FAC creates a private-network Kubernetes environment that is useful f
 ## Features
 
 - Kubernetes 1.36 with CRI-O, Calico, Helm, and metrics-server
-- Optional Longhorn, local-path, or NFS storage
-- Optional Kyverno admission policies
+- Longhorn, local-path, or NFS storage roles
+- Kyverno admission policies
 - OpenBao-backed secrets with External Secrets Operator
-- Optional Traefik ingress, Jenkins, Prometheus, Grafana, and MySQL
-- Optional GitLab, Gitea, Nexus, and Harbor services
+- Traefik ingress, Jenkins, Prometheus, Grafana, and MySQL roles
+- GitLab, Gitea, Nexus, and Harbor service roles
 - Terminal UI for editing the lab inventory and running deployment commands
 - Environment-specific inventories with pinned versions in one location
 
@@ -33,9 +33,9 @@ The default `lab` environment creates:
 | `node01` | Worker | `192.168.56.11` | 2 vCPU, 3 GB RAM |
 | `node02` | Worker | `192.168.56.12` | 2 vCPU, 3 GB RAM |
 
-Enabling `deploy_secrets` adds `secrets` at `192.168.56.20`. Enabling `services_vm_enabled` adds `services` at `192.168.56.80`.
+Set `secrets_vm_enabled: true` to create `secrets` at `192.168.56.20`. Set `services_vm_enabled: true` to create `services` at `192.168.56.80`. These are topology settings; they do not select Ansible roles.
 
-The full topology and feature dependencies are defined in `ansible/inventories/lab/hosts.yml` and enforced during the Ansible preflight checks.
+The topology is defined in `ansible/inventories/lab/hosts.yml`. Run prerequisite roles before dependent services, as described in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Prerequisites
 
@@ -74,11 +74,11 @@ EOF
 VAGRANT_EXPERIMENTAL="disks" vagrant up
 ```
 
-2. Configure Kubernetes and the enabled services:
+2. Configure the base cluster:
 
 ```shell
 cd ansible
-ansible-playbook site.yml
+ansible-playbook site.yml --tags init
 cd ..
 ```
 
@@ -90,26 +90,24 @@ kubectl get nodes
 kubectl get pods -A
 ```
 
-The default configuration builds the three-node Kubernetes cluster with all `deploy_*` switches disabled.
+The `init` tag builds the Kubernetes nodes, installs Helm, and installs metrics-server. Other roles use dedicated tags such as `role_storage` and `role_prometheus`.
 
 ## Optional features
 
-Edit `ansible/inventories/lab/hosts.yml`, then run `vagrant up` when a VM must be created and run the Ansible playbook again.
+Set the optional VM topology settings in `ansible/inventories/lab/hosts.yml`, then run `vagrant up` for the VM. Select one role with its dedicated tag:
 
-| Switch | Adds | Requirements |
-|---|---|---|
-| `deploy_storage: true` | Longhorn, local-path, or NFS storage | Set `storage_backend` to `longhorn`, `local-path`, or `nfs` |
-| `deploy_kyverno: true` | Admission policy enforcement | None |
-| `deploy_secrets: true` | OpenBao secrets VM and External Secrets Operator | None |
-| `deploy_traefik: true` | Traefik ingress and dashboard | `deploy_secrets` |
-| `deploy_jenkins: true` | Jenkins | `deploy_storage` and `deploy_secrets` |
-| `deploy_monitoring: true` | Prometheus and Grafana | `deploy_storage`, `deploy_secrets`, and `deploy_traefik` |
-| `deploy_mysql: true` | MySQL | `deploy_storage` and `deploy_secrets` |
-| `services_vm_enabled: true` | GitLab, Gitea, Nexus, Harbor, and NFS/Docker services | `deploy_secrets` |
+| Role | Tag |
+|---|---|
+| Common, control plane, worker, waiting | `role_common`, `role_controlplane`, `role_worker`, `role_waiting` |
+| Helm, metrics-server | `role_helm`, `role_metrics_server` |
+| Storage, Kyverno | `role_storage`, `role_kyverno` |
+| OpenBao, External Secrets | `role_openbao_server`, `role_external_secrets` |
+| Traefik, Jenkins, Prometheus, Grafana, MySQL | `role_traefik`, `role_jenkins`, `role_prometheus`, `role_grafana`, `role_mysql` |
+| Docker/NFS, GitLab, Gitea, Nexus, Harbor | `role_docker_nfs`, `role_docker_insecure_registry`, `role_gitlab`, `role_gitea`, `role_nexus`, `role_harbor` |
 
-NFS storage additionally requires `services_vm_enabled: true`.
+For example: `ansible-playbook ansible/site.yml --tags role_prometheus`. Each tag selects only that role. Install dependencies as separate role runs first; NFS storage requires the services VM to exist.
 
-For current step-by-step enablement and verification commands, use [docs/RUNBOOK.md](docs/RUNBOOK.md). [The PDF guide](docs/kubernetes-fac-guide.pdf) is a generated snapshot and may not reflect the latest inventory values.
+For step-by-step role order and verification commands, use [docs/RUNBOOK.md](docs/RUNBOOK.md). [The PDF guide](docs/kubernetes-fac-guide.pdf) is a generated snapshot and may not reflect the latest inventory values.
 
 ## Configuration
 
@@ -117,7 +115,7 @@ Configuration follows a single-source-of-truth model:
 
 | Purpose | File |
 |---|---|
-| Nodes, addresses, VM resources, and feature switches | `ansible/inventories/<environment>/hosts.yml` |
+| Nodes, addresses, VM resources, and topology settings | `ansible/inventories/<environment>/hosts.yml` |
 | Shared environment settings | `ansible/inventories/<environment>/group_vars/all/main.yml` |
 | Pinned Kubernetes, chart, and container versions | `ansible/inventories/<environment>/group_vars/all/versions.yml` |
 | Role-specific defaults | `ansible/roles/<role>/defaults/main.yml` |
@@ -176,11 +174,11 @@ bao kv get kv/apps/grafana
 # Start or recreate VMs
 VAGRANT_EXPERIMENTAL="disks" vagrant up
 
-# Apply an inventory change
-cd ansible && ansible-playbook site.yml
+# Configure the base cluster
+ansible-playbook ansible/site.yml --tags init
 
 # Apply one role or feature
-cd ansible && ansible-playbook site.yml --tags kyverno
+cd ansible && ansible-playbook site.yml --tags role_kyverno
 
 # Stop or destroy VMs
 vagrant halt

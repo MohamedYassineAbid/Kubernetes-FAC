@@ -27,9 +27,9 @@ end
 
 NODES = collect_hosts(INVENTORY["all"])
 
-# Optional VMs, switched in hosts.yml: group => switch
-{ "service_nodes" => "services_vm_enabled", "secrets_nodes" => "deploy_secrets" }.each do |group, switch|
-  next if ALL_VARS.fetch(switch, false)
+# Optional VMs, selected by topology settings in hosts.yml: group => setting
+{ "service_nodes" => "services_vm_enabled", "secrets_nodes" => "secrets_vm_enabled" }.each do |group, setting|
+  next if ALL_VARS.fetch(setting, false)
   collect_hosts(find_group(INVENTORY["all"], group) || {}).each_key { |h| NODES.delete(h) }
 end
 

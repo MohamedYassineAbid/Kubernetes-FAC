@@ -1,227 +1,51 @@
-# Example TUI Configurations
+# Example configurations
 
-Common configuration patterns for different use cases.
+Role execution is explicit: use a Kuboos task template or the matching `role_*` Ansible tag. The settings below only describe optional VM topology and storage.
 
-## Minimal Cluster (Development)
+## Base Kubernetes cluster
 
-**Use case:** Testing Kubernetes features locally, minimal resource usage
-
-### Configuration Tab
-```
-Network CIDR: 192.168.56.0/24
-controlplane: 192.168.56.10
-node01: 192.168.56.11
-node02: 192.168.56.12
-
-✅ deploy_storage (storage_backend: local-path)
-❌ services_vm_enabled
-❌ deploy_secrets
-❌ deploy_kyverno
-❌ deploy_traefik
-❌ deploy_jenkins
-❌ deploy_monitoring
-❌ deploy_mysql
+```yaml
+services_vm_enabled: false
+secrets_vm_enabled: false
+storage_backend: local-path
 ```
 
-**Resources:** ~9GB RAM (3 VMs)
+Run the base roles with `ansible-playbook ansible/site.yml --tags init`.
 
-**Features:** Bare Kubernetes with local-path storage
+## Optional service VMs
 
----
-
-## Full Stack with GitLab CI/CD
-
-**Use case:** Complete CI/CD pipeline with Git hosting and container registry
-
-### Configuration Tab
-```
-Network CIDR: 192.168.56.0/24
-controlplane: 192.168.56.10
-node01: 192.168.56.11
-node02: 192.168.56.12
-secrets: 192.168.56.20
-services: 192.168.56.80
-
-✅ services_vm_enabled
-✅ deploy_secrets
-✅ deploy_storage (storage_backend: nfs)
-✅ deploy_kyverno
-✅ deploy_traefik
-✅ deploy_jenkins
-✅ deploy_monitoring
-❌ deploy_mysql
+```yaml
+services_vm_enabled: true
+secrets_vm_enabled: true
+storage_backend: local-path
 ```
 
-### Services Tab
-```
-GitLab:
-  HTTP Port: 80
-  SSH Port: 2222
-  Registry Port: 5050
-  Data Directory: /srv/gitlab
-  Puma Workers: 2
+After `vagrant up`, run the needed roles individually. For example, run `role_openbao_server`, then `role_external_secrets`, then `role_traefik`.
 
-Nexus:
-  HTTP Port: 8081
-  Data Path: /srv/nexus
+## Storage backend choices
 
-Harbor:
-  HTTP Port: 8880
-
-NFS:
-  Export Path: /srv/nfs/k8s
+```yaml
+storage_backend: local-path
 ```
 
-**Resources:** about 13GB RAM (5 VMs at the inventory defaults)
+Or use `longhorn` for replicated storage. Run the `init` roles first so the nodes have the Longhorn prerequisites.
 
-**Access:**
-- GitLab: http://192.168.56.80
-- Nexus: http://192.168.56.80:8081
-- Harbor: http://192.168.56.80:8880
-- Traefik Dashboard: http://traefik.fss (add to /etc/hosts)
-- Grafana: http://grafana.fss
-
----
-
-## Lightweight Git + Monitoring
-
-**Use case:** Simple Git hosting with cluster monitoring, no heavy services
-
-### Configuration Tab
-```
-Network CIDR: 192.168.56.0/24
-controlplane: 192.168.56.10
-node01: 192.168.56.11
-node02: 192.168.56.12
-secrets: 192.168.56.20
-services: 192.168.56.80
-
-✅ services_vm_enabled
-✅ deploy_secrets
-✅ deploy_storage (storage_backend: longhorn)
-❌ deploy_kyverno
-✅ deploy_traefik
-❌ deploy_jenkins
-✅ deploy_monitoring
-❌ deploy_mysql
+```yaml
+services_vm_enabled: true
+storage_backend: nfs
 ```
 
-### Services Tab
-```
-Gitea:  # Use Gitea instead of heavy GitLab
-  HTTP Port: 3000
-  SSH Port: 2224
-  Data Path: /srv/gitea
+NFS requires the services VM. Run `role_docker_nfs` on that VM, then run `role_storage` on the control plane.
 
-NFS:
-  Export Path: /srv/nfs/k8s
+## Role tags
 
-# GitLab/Nexus/Harbor can be left at defaults (won't be deployed)
-```
+| Role | Tag |
+|---|---|
+| Common, controlplane, worker, waiting | `role_common`, `role_controlplane`, `role_worker`, `role_waiting` |
+| Helm, metrics-server | `role_helm`, `role_metrics_server` |
+| OpenBao, External Secrets | `role_openbao_server`, `role_external_secrets` |
+| Storage, Kyverno, Traefik | `role_storage`, `role_kyverno`, `role_traefik` |
+| Jenkins, Prometheus, Grafana, MySQL | `role_jenkins`, `role_prometheus`, `role_grafana`, `role_mysql` |
+| Docker/NFS, Docker registry, GitLab, Gitea, Nexus, Harbor | `role_docker_nfs`, `role_docker_insecure_registry`, `role_gitlab`, `role_gitea`, `role_nexus`, `role_harbor` |
 
-**Resources:** about 13GB RAM (5 VMs at the inventory defaults; increase worker RAM if using Longhorn)
-
-**Why this setup:**
-- Gitea is much lighter than GitLab (~50MB vs 2GB RAM)
-- Longhorn provides replicated storage (data survives node loss)
-- Prometheus + Grafana for monitoring
-- Traefik for ingress
-
----
-
-## Services VM with Harbor Configuration
-
-**Use case:** Configure Harbor on the Services VM. Enabling `services_vm_enabled` also deploys GitLab, Gitea, and Nexus in this repository.
-
-### Configuration Tab
-```
-Network CIDR: 192.168.56.0/24
-controlplane: 192.168.56.10
-node01: 192.168.56.11
-node02: 192.168.56.12
-secrets: 192.168.56.20
-services: 192.168.56.80
-
-✅ services_vm_enabled
-✅ deploy_secrets  # Harbor password comes from OpenBao
-✅ deploy_storage (storage_backend: local-path)
-❌ deploy_kyverno
-❌ deploy_traefik
-❌ deploy_jenkins
-❌ deploy_monitoring
-❌ deploy_mysql
-```
-
-### Services Tab
-```
-Harbor:
-  HTTP Port: 8880
-  Install Directory: /opt/harbor
-  Data Volume: /data
-
-# Other services left at defaults (won't deploy)
-```
-
-**Resources:** about 13GB RAM (5 VMs at the inventory defaults)
-
-**Features:**
-- Secure container registry
-- Vulnerability scanning (Trivy)
-- Image signing
-- Admin password stored in OpenBao
-
----
-
-## Port Customization Example
-
-**Scenario:** Avoid common port conflicts by shifting everything
-
-### Services Tab
-```
-GitLab:
-  HTTP Port: 8080  # Instead of 80
-  SSH Port: 2222
-  Registry Port: 5050
-
-Nexus:
-  HTTP Port: 9081  # Instead of 8081
-
-Gitea:
-  HTTP Port: 3030  # Instead of 3000
-  SSH Port: 2224
-
-Harbor:
-  HTTP Port: 9880  # Instead of 8880
-```
-
-**Access URLs:**
-- GitLab: http://192.168.56.80:8080
-- Nexus: http://192.168.56.80:9081
-- Gitea: http://192.168.56.80:3030
-- Harbor: http://192.168.56.80:9880
-
----
-
-## Tips
-
-1. **Start minimal** - Enable features one at a time, run Ansible after each
-2. **RAM planning:**
-   - Bare cluster: 9GB
-   - +Secrets VM: +1GB
-   - +Services VM (GitLab): +3GB
-   - +Monitoring: +1GB
-   
-3. **Storage backends:**
-   - `local-path`: Lightest, data stays on node
-   - `longhorn`: Replicated, survives node loss
-   - `nfs`: Shared, requires services VM
-
-4. **Dependencies:**
-   - Traefik needs `deploy_secrets`
-   - Jenkins/Monitoring/MySQL need `deploy_storage` + `deploy_secrets`
-   - NFS storage needs `services_vm_enabled`
-
-5. **Port conflicts:**
-   - GitLab takes port 80, so Harbor uses 8880
-   - Customize in Services tab if needed
-   - Nexus registry is fixed at 5002 (in main.yml)
+For example, run only Prometheus with `ansible-playbook ansible/site.yml --tags role_prometheus`.

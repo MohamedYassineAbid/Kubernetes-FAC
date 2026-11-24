@@ -119,13 +119,13 @@ class ClusterConfig:
         except KeyError:
             pass
     
-    def get_deploy_switch(self, switch: str) -> bool:
-        """Get deploy switch value"""
-        return self.hosts_data['all']['vars'].get(switch, False)
+    def get_topology_setting(self, setting: str) -> bool:
+        """Get optional VM topology setting"""
+        return self.hosts_data['all']['vars'].get(setting, False)
     
-    def set_deploy_switch(self, switch: str, value: bool):
-        """Set deploy switch value"""
-        self.hosts_data['all']['vars'][switch] = value
+    def set_topology_setting(self, setting: str, value: bool):
+        """Set optional VM topology setting"""
+        self.hosts_data['all']['vars'][setting] = value
 
 
 class ConfigPanel(VerticalScroll):
@@ -172,23 +172,18 @@ class ConfigPanel(VerticalScroll):
                 classes="config-row"
             )
         
-        # Feature toggles
-        yield Static("Deployment Features", classes="subsection-title")
+        # Optional VM topology
+        yield Static("Optional VM Topology", classes="subsection-title")
+        yield Static("These settings control which VMs exist. Run application roles from Kuboos.", classes="info-message")
         
-        switches = [
+        settings = [
             ("services_vm_enabled", "Services VM (GitLab, Nexus, Harbor, NFS)"),
-            ("deploy_secrets", "Secrets (OpenBao + External Secrets)"),
-            ("deploy_storage", "Storage (Longhorn/Local-Path/NFS)"),
-            ("deploy_kyverno", "Kyverno (Policy Engine)"),
-            ("deploy_traefik", "Traefik (Ingress Controller)"),
-            ("deploy_jenkins", "Jenkins"),
-            ("deploy_monitoring", "Monitoring (Prometheus + Grafana)"),
-            ("deploy_mysql", "MySQL Database"),
+            ("secrets_vm_enabled", "Secrets VM (OpenBao)"),
         ]
         
-        for switch_id, label in switches:
+        for setting_id, label in settings:
             yield Horizontal(
-                Switch(value=self.config.get_deploy_switch(switch_id), id=switch_id),
+                Switch(value=self.config.get_topology_setting(setting_id), id=setting_id),
                 Label(label, classes="switch-label"),
                 classes="config-row"
             )
@@ -213,7 +208,7 @@ class ServicesPanel(VerticalScroll):
     def compose(self) -> ComposeResult:
         yield Static("🛠️  Services VM Configuration", classes="section-title")
         
-        services_enabled = self.config.get_deploy_switch('services_vm_enabled')
+        services_enabled = self.config.get_topology_setting('services_vm_enabled')
         services_ip = self.config.get_node_ip('services') or "192.168.56.80"
         
         if not services_enabled:
@@ -372,13 +367,13 @@ class DeployPanel(Vertical):
         
         yield Horizontal(
             Button("Vagrant Up", variant="success", id="vagrant_up"),
-            Button("Ansible Deploy", variant="primary", id="ansible_deploy"),
+            Button("Set Up Cluster", variant="primary", id="ansible_deploy"),
             Button("Destroy VMs", variant="error", id="vagrant_destroy"),
             classes="button-row"
         )
         
         yield Static("Deployment Log", classes="subsection-title")
-        yield Log(id="deploy_log", auto_scroll=True)
+        yield Log(id="run_log", auto_scroll=True)
 
 
 class StatusPanel(Vertical):
@@ -560,15 +555,10 @@ class KubernetesFACTUI(App):
             ip_input = self.query_one(f"#ip_{node}", Input)
             config.set_node_ip(node, ip_input.value)
         
-        # Update deploy switches
-        switches = [
-            "services_vm_enabled", "deploy_secrets", "deploy_storage",
-            "deploy_kyverno", "deploy_traefik", "deploy_jenkins",
-            "deploy_monitoring", "deploy_mysql"
-        ]
-        for switch in switches:
-            switch_widget = self.query_one(f"#{switch}", Switch)
-            config.set_deploy_switch(switch, switch_widget.value)
+        # Update optional VM topology settings.
+        for setting in ["services_vm_enabled", "secrets_vm_enabled"]:
+            setting_widget = self.query_one(f"#{setting}", Switch)
+            config.set_topology_setting(setting, setting_widget.value)
         
         # Save to files
         config.save_hosts()
@@ -583,8 +573,8 @@ class KubernetesFACTUI(App):
         self.query_one("#storage_backend", Input).value = str(config.hosts_data['all']['vars'].get('storage_backend', 'local-path'))
         for node in ["controlplane", "node01", "node02"]:
             self.query_one(f"#ip_{node}", Input).value = config.get_node_ip(node)
-        for switch in ["services_vm_enabled", "deploy_secrets", "deploy_storage", "deploy_kyverno", "deploy_traefik", "deploy_jenkins", "deploy_monitoring", "deploy_mysql"]:
-            self.query_one(f"#{switch}", Switch).value = config.get_deploy_switch(switch)
+        for setting in ["services_vm_enabled", "secrets_vm_enabled"]:
+            self.query_one(f"#{setting}", Switch).value = config.get_topology_setting(setting)
         self.notify("Configuration reloaded from files")
     
     async def save_services_configuration(self):
@@ -638,7 +628,7 @@ class KubernetesFACTUI(App):
     
     async def run_command(self, command_type: str):
         """Run deployment commands with live output"""
-        log_widget = self.query_one("#deploy_log", Log)
+        log_widget = self.query_one("#run_log", Log)
         log_widget.clear()
         
         commands = {
@@ -648,9 +638,9 @@ class KubernetesFACTUI(App):
                 "desc": "Starting Vagrant VMs..."
             },
             "ansible_deploy": {
-                "cmd": f"ansible-playbook -i inventories/{ENVIRONMENT}/hosts.yml site.yml",
+                "cmd": f"ansible-playbook -i inventories/{ENVIRONMENT}/hosts.yml site.yml --tags init",
                 "cwd": ANSIBLE_DIR,
-                "desc": "Running Ansible playbook..."
+                "desc": "Configuring the base Kubernetes cluster..."
             },
             "vagrant_destroy": {
                 "cmd": "vagrant destroy -f",

@@ -37,7 +37,7 @@
       - traefik_dashboard_password | length >= 12
     fail_msg: >-
       The Traefik dashboard password read from OpenBao (kv/bootstrap/traefik) is missing
-      or shorter than 12 characters. Re-run with deploy_secrets: true, or set
+      or shorter than 12 characters. Run the OpenBao role first, or set
       traefik_dashboard_enabled: false.
     quiet: true
   when: traefik_dashboard_enabled | bool

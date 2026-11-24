@@ -1,11 +1,11 @@
 # Kubernetes-FAC Terminal UI
 
-A beautiful terminal interface for managing your Kubernetes cluster deployment.
+A terminal interface for managing Kubernetes-FAC VM topology and cluster status.
 
 ## Features
 
-- 📝 **Configuration Editor** - Edit cluster topology, IPs, resources, and feature toggles
-- 🚀 **Deployment Control** - Run vagrant/ansible commands with live log streaming
+- 📝 **Configuration Editor** - Edit cluster topology, IPs, resources, and optional VM presence
+- 🚀 **Deployment Control** - Start VMs and configure the base cluster with live log streaming
 - 📊 **Status Dashboard** - View VM states and Kubernetes node status
 - ⌨️  **Keyboard Navigation** - Full keyboard support for productivity
 - 🎨 **Clean Interface** - Organized tabs and color-coded output
@@ -40,7 +40,7 @@ KFAC_ENV=lab python k8s_fac_tui.py
 
 - **Configuration** - Edit `hosts.yml` settings visually
   - Modify node IP addresses
-  - Toggle deployment features (storage, secrets, traefik, etc.)
+  - Set whether optional services and secrets VMs are part of the lab topology
   - Save changes back to the inventory files
 
 - **Services** - Configure Services VM applications
@@ -53,7 +53,7 @@ KFAC_ENV=lab python k8s_fac_tui.py
 
 - **Deploy** - Execute deployment commands
   - `Vagrant Up` - Create/start VMs
-  - `Ansible Deploy` - Run the provisioning playbook
+  - `Set Up Cluster` - Run the `init` roles only
   - `Destroy VMs` - Clean up all VMs
   - Real-time log output for all commands
 
@@ -66,7 +66,7 @@ KFAC_ENV=lab python k8s_fac_tui.py
 
 - `Tab` / `Shift+Tab` - Navigate between elements
 - `Enter` - Activate buttons
-- `Space` - Toggle switches
+- `Space` - Toggle a VM topology setting
 - `q` - Quit application
 - `r` - Refresh status
 - `Ctrl+C` - Force quit

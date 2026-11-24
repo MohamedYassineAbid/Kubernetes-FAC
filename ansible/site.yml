@@ -1,5 +1,5 @@
 ---
-- name: Preflight - validate the deploy switches
+- name: Preflight - validate storage configuration
   hosts: localhost
   gather_facts: false
   become: false
@@ -8,21 +8,13 @@
     ansible_connection: local
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
   tasks:
-    - name: Check that every enabled layer has what it needs
+    - name: Check that the selected storage backend is valid
       ansible.builtin.assert:
         that:
           - storage_backend in ['longhorn', 'local-path', 'nfs']
           - storage_backend != 'nfs' or (services_vm_enabled | bool)
-          - not (deploy_jenkins | bool) or (deploy_storage | bool and deploy_secrets | bool)
-          - not (deploy_monitoring | bool) or (deploy_storage | bool and deploy_secrets | bool)
-          - not (deploy_monitoring | bool) or (deploy_traefik | bool)
-          - not (deploy_mysql | bool) or (deploy_storage | bool and deploy_secrets | bool)
-          - not (deploy_traefik | bool) or (deploy_secrets | bool)
-          - not (services_vm_enabled | bool) or (deploy_secrets | bool)
         fail_msg: >-
-          A switch in hosts.yml needs another one turned on: jenkins, monitoring and mysql
-          need storage, secrets and Traefik; traefik and the services VM need secrets;
-          storage_backend must be longhorn, local-path or nfs, and nfs needs services_vm_enabled.
+          storage_backend must be longhorn, local-path or nfs, and NFS requires the services VM.
         quiet: true
 
 - name: Group hosts that are enabled in the inventory
@@ -34,7 +26,7 @@
       ansible.builtin.group_by:
         key: >-
           {{ 'disabled' if (inventory_hostname in groups['service_nodes'] and not services_vm_enabled | bool)
-             or (inventory_hostname in groups['secrets_nodes'] and not deploy_secrets | bool) else 'active' }}
+             or (inventory_hostname in groups['secrets_nodes'] and not secrets_vm_enabled | bool) else 'active' }}
       changed_when: false
 
 # ── Cluster ─────────────────────────────────────────────────
@@ -42,125 +34,125 @@
   hosts: k8s_cluster
   become: true
   roles:
-    - { role: common, tags: ["init", "common"] }
+    - { role: common, tags: ["init", "role_common"] }
 
 - name: Initialize Kubernetes control plane
   hosts: control_nodes
   become: true
   roles:
-    - { role: controlplane, tags: ["init", "controlplane"] }
+    - { role: controlplane, tags: ["init", "role_controlplane"] }
 
 - name: Join worker nodes to the cluster
   hosts: workers
   become: true
   serial: 1
   roles:
-    - { role: worker, tags: ["init", "worker"] }
+    - { role: worker, tags: ["init", "role_worker"] }
 
 - name: Wait for system pods
   hosts: control_nodes
   become: true
   roles:
-    - { role: waiting, tags: ["init", "waiting"] }
+    - { role: waiting, tags: ["init", "role_waiting"] }
 
 - name: Install Helm and metrics-server
   hosts: control_nodes
   become: true
   roles:
-    - { role: helm, tags: ["helm", "init"] }
-    - { role: metrics_server, tags: ["metrics", "init"] }
+    - { role: helm, tags: ["helm", "init", "role_helm"] }
+    - { role: metrics_server, tags: ["metrics", "init", "role_metrics_server"] }
 
 # ── Secrets VM (outside the cluster) ────────────────────────
 - name: OpenBao on the secrets VM (source of truth for every secret)
   hosts: secrets_nodes:&active
   become: true
   roles:
-    - { role: openbao_server, tags: ["openbao_server", "openbao", "secrets", "traefik", "jenkins", "grafana", "mysql", "harbor"] }
+    - { role: openbao_server, tags: ["role_openbao_server"] }
 
 # ── Storage ─────────────────────────────────────────────────
 - name: Docker and NFS on the services VM
   hosts: service_nodes:&active
   become: true
   roles:
-    - { role: Docker_NFS, tags: ["dockernfs"] }
+    - { role: Docker_NFS, tags: ["role_docker_nfs"] }
 
 - name: Cluster storage (Longhorn, local-path or NFS)
   hosts: control_nodes
   become: true
   roles:
-    - { role: storage, tags: ["storage", "jenkins", "prometheus", "grafana", "mysql"], when: deploy_storage | bool }
+    - { role: storage, tags: ["role_storage"] }
 
 # ── Platform: policy first, then secrets ────────────────────
 - name: Kyverno policies (enforced before any workload is installed)
   hosts: control_nodes
   become: true
   roles:
-    - { role: kyverno, tags: ["kyverno"], when: deploy_kyverno | bool }
+    - { role: kyverno, tags: ["role_kyverno"] }
 
 - name: External Secrets (syncs OpenBao secrets into the cluster)
   hosts: control_nodes
   become: true
   roles:
-    - { role: external_secrets, tags: ["openbao", "secrets", "jenkins", "grafana", "mysql"], when: deploy_secrets | bool }
+    - { role: external_secrets, tags: ["role_external_secrets"] }
 
 - name: Traefik ingress
   hosts: control_nodes
   become: true
   roles:
-    - { role: traefik, tags: ["traefik"], when: deploy_traefik | bool }
+    - { role: traefik, tags: ["role_traefik"] }
 
 # ── Applications ────────────────────────────────────────────
 - name: Jenkins
   hosts: control_nodes
   become: true
   roles:
-    - { role: jenkins, tags: ["jenkins"], when: deploy_jenkins | bool }
+    - { role: jenkins, tags: ["role_jenkins"] }
 
 - name: Prometheus
   hosts: control_nodes
   become: true
   roles:
-    - { role: prometheus, tags: ["prometheus"], when: deploy_monitoring | bool }
+    - { role: prometheus, tags: ["role_prometheus"] }
 
 - name: Grafana
   hosts: control_nodes
   become: true
   roles:
-    - { role: grafana, tags: ["grafana"], when: deploy_monitoring | bool }
+    - { role: grafana, tags: ["role_grafana"] }
 
 - name: MySQL
   hosts: control_nodes
   become: true
   roles:
-    - { role: mysql, tags: ["mysql"], when: deploy_mysql | bool }
+    - { role: mysql, tags: ["role_mysql"] }
 
 # ── Services VM ─────────────────────────────────────────────
 - name: GitLab
   hosts: service_nodes:&active
   become: true
   roles:
-    - { role: gitlab, tags: ["gitlab"] }
+    - { role: gitlab, tags: ["role_gitlab"] }
 
 - name: Container insecure registry setup (Docker & CRI-O)
   hosts: all:&active
   become: true
   roles:
-    - { role: docker_insecure_registry, tags: ["insecure", "nexus"], when: services_vm_enabled | bool }
+    - { role: docker_insecure_registry, tags: ["role_docker_insecure_registry"] }
 
 - name: Nexus
   hosts: service_nodes:&active
   become: true
   roles:
-    - { role: nexus, tags: ["nexus"] }
+    - { role: nexus, tags: ["role_nexus"] }
 
 - name: Gitea
   hosts: service_nodes:&active
   become: true
   roles:
-    - { role: gitea, tags: ["gitea"] }
+    - { role: gitea, tags: ["role_gitea"] }
 
 - name: Harbor
   hosts: service_nodes:&active
   become: true
   roles:
-    - { role: harbor, tags: ["harbor"] }
+    - { role: harbor, tags: ["role_harbor"] }
