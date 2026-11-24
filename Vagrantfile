@@ -1,4 +1,5 @@
 require "yaml"
+require "shellwords"
 
 # Everything comes from the Ansible inventory (single source of truth).
 # KFAC_ENV picks the environment: ansible/inventories/<env>/hosts.yml (default: lab)
@@ -26,6 +27,8 @@ def find_group(group, name)
 end
 
 NODES = collect_hosts(INVENTORY["all"])
+SHARED_SSH_KEY_PATH = File.join(__dir__, ".vagrant", "kuboos_shared_key.pub")
+SHARED_SSH_KEY = File.file?(SHARED_SSH_KEY_PATH) ? File.read(SHARED_SSH_KEY_PATH).strip : nil
 
 # Optional VMs, selected by topology settings in hosts.yml: group => setting
 { "service_nodes" => "services_vm_enabled", "secrets_nodes" => "secrets_vm_enabled" }.each do |group, setting|
@@ -59,6 +62,20 @@ Vagrant.configure("2") do |config|
         if CLUSTER_NAME != ""
           vb.customize ["modifyvm", :id, "--groups", ("/" + CLUSTER_NAME)]
         end
+      end
+
+      # Add the project-local Kuboos key to every VM, while retaining Vagrant's
+      # per-machine key. The public key is kept under ignored .vagrant/ state.
+      if SHARED_SSH_KEY && !SHARED_SSH_KEY.empty?
+        escaped_key = Shellwords.escape(SHARED_SSH_KEY)
+        node.vm.provision "shell", inline: <<~SHELL
+          set -eu
+          install -d -m 700 -o vagrant -g vagrant /home/vagrant/.ssh
+          touch /home/vagrant/.ssh/authorized_keys
+          chmod 600 /home/vagrant/.ssh/authorized_keys
+          grep -Fqx #{escaped_key} /home/vagrant/.ssh/authorized_keys || printf '%s\\n' #{escaped_key} >> /home/vagrant/.ssh/authorized_keys
+          chown vagrant:vagrant /home/vagrant/.ssh/authorized_keys
+        SHELL
       end
     end
   end
