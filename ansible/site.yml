@@ -41,26 +41,26 @@
   hosts: k8s_cluster
   become: true
   roles:
-    - { role: common, tags: ["init"] }
+    - { role: common, tags: ["init", "common"] }
 
 - name: Initialize Kubernetes control plane
   hosts: control_nodes
   become: true
   roles:
-    - { role: controlplane, tags: ["init"] }
+    - { role: controlplane, tags: ["init", "controlplane"] }
 
 - name: Join worker nodes to the cluster
   hosts: workers
   become: true
   serial: 1
   roles:
-    - { role: worker, tags: ["init"] }
+    - { role: worker, tags: ["init", "worker"] }
 
 - name: Wait for system pods
   hosts: control_nodes
   become: true
   roles:
-    - { role: waiting, tags: ["init"] }
+    - { role: waiting, tags: ["init", "waiting"] }
 
 - name: Install Helm and metrics-server
   hosts: control_nodes
@@ -74,7 +74,7 @@
   hosts: secrets_nodes:&active
   become: true
   roles:
-    - { role: openbao_server, tags: ["openbao", "secrets", "traefik", "jenkins", "grafana", "mysql", "harbor"] }
+    - { role: openbao_server, tags: ["openbao_server", "openbao", "secrets", "traefik", "jenkins", "grafana", "mysql", "harbor"] }
 
 # ── Storage ─────────────────────────────────────────────────
 - name: Docker and NFS on the services VM
