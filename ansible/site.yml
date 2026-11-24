@@ -35,6 +35,7 @@
         key: >-
           {{ 'disabled' if (inventory_hostname in groups['service_nodes'] and not services_vm_enabled | bool)
              or (inventory_hostname in groups['secrets_nodes'] and not deploy_secrets | bool) else 'active' }}
+      changed_when: false
 
 # ── Cluster ─────────────────────────────────────────────────
 - name: Common Kubernetes prerequisites
