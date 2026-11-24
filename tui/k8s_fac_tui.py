@@ -467,7 +467,7 @@ class KubernetesFACTUI(App):
     .access-info {
         color: $success;
         padding: 0 2 1 2;
-        font-style: italic;
+        text-style: italic;
     }
     
     Input {
