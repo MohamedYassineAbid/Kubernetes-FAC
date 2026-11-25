@@ -4,7 +4,7 @@
     name: prometheus-community
     repo_url: https://prometheus-community.github.io/helm-charts
 
-- name: Deploy Prometheus with Traefik Ingress
+- name: Deploy Prometheus
   kubernetes.core.helm:
     name: "{{ prometheus_release }}"
     chart_ref: prometheus-community/prometheus
@@ -21,7 +21,7 @@
           size: "{{ prometheus_storage_size }}"
           storageClass: "{{ storage_class_name }}"
         ingress:
-          enabled: true
+          enabled: "{{ prometheus_ingress_enabled }}"
           ingressClassName: "{{ traefik_ingress_class }}"
           hosts:
             - "{{ prometheus_host }}"

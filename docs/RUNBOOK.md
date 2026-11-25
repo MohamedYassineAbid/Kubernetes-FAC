@@ -189,7 +189,7 @@ jq -r .root_token ansible/fetched/openbao/init.json
 
 Routes `*.fss` web traffic to apps and serves a password-protected dashboard.
 
-**Needs:** secrets (section 4)
+**Needs:** OpenBao only when `traefik_dashboard_enabled: true` (the default). Set it to `false` to install Traefik without the OpenBao-backed dashboard.
 
 **Run:**
 ```shell
@@ -207,7 +207,7 @@ Browse to **http://traefik.fss:30090/dashboard/** and log in as `admin`.
 
 ## 6. Jenkins
 
-**Needs:** storage and secrets
+**Needs:** a StorageClass and OpenBao/External Secrets for its admin password.
 
 **Run:**
 ```shell
@@ -225,11 +225,21 @@ Browse to **http://192.168.56.10:32000** and log in as `admin`.
 
 ## 7. Monitoring (Prometheus + Grafana)
 
-**Needs:** storage, External Secrets, and Traefik. Run those roles first.
+Prometheus and Grafana can be run independently and in either order. Grafana can start before Prometheus; its datasource will connect when Prometheus is available. Both use persistent volumes and therefore need a StorageClass. Grafana also needs External Secrets and OpenBao for its admin password. Ingress is enabled by default; set `prometheus_ingress_enabled: false` or `grafana_ingress_enabled: false` to install either role without Traefik. Without ingress, use `kubectl port-forward` or configure another way to reach the service.
+
+For example, to install both without Traefik:
+```shell
+ansible-playbook ansible/site.yml --tags role_prometheus -e prometheus_ingress_enabled=false
+ansible-playbook ansible/site.yml --tags role_grafana -e grafana_ingress_enabled=false
+kubectl -n monitoring port-forward svc/prometheus-server 9090:80
+# In a second terminal:
+kubectl -n monitoring port-forward svc/grafana 3000:80
+```
 
 **Run:**
 ```shell
-ansible-playbook ansible/site.yml --tags role_prometheus,role_grafana
+ansible-playbook ansible/site.yml --tags role_prometheus
+ansible-playbook ansible/site.yml --tags role_grafana
 ```
 
 **Check and open:**
@@ -244,7 +254,7 @@ bao_get apps/grafana admin-password           # Grafana admin password
 
 ## 8. MySQL
 
-**Needs:** storage and secrets
+**Needs:** a StorageClass and OpenBao/External Secrets for its database credentials.
 
 **Run:**
 ```shell
@@ -268,7 +278,7 @@ From inside the cluster, apps connect to `mysql.mysql.svc.cluster.local:3306`.
 
 ## 9. Services VM (NFS, GitLab, Gitea, Nexus, Harbor)
 
-**Needs:** secrets (Harbor's password is in OpenBao). Uses about 3 GB of RAM.
+**Needs:** Docker on the services VM (installed by `role_docker_nfs`) and OpenBao for Harbor's admin password. Uses about 3 GB of RAM.
 Set `services_vm_enabled: true` in `hosts.yml` to include the optional services VM.
 
 **Run:**

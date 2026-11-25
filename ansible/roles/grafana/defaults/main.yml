@@ -2,3 +2,4 @@
 grafana_chart_repo: "https://grafana-community.github.io/helm-charts"
 grafana_storage_size: 5Gi
 grafana_admin_secret_name: grafana-admin
+grafana_ingress_enabled: true

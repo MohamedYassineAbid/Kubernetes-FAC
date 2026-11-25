@@ -17,7 +17,7 @@
     es_properties: { admin-password: admin-password }
     es_static: { admin-user: "{{ grafana_admin_user }}" }
 
-- name: Deploy Grafana with Traefik Ingress and Prometheus Data Source
+- name: Deploy Grafana with Prometheus Data Source
   kubernetes.core.helm:
     name: grafana
     chart_ref: grafana-community/grafana
@@ -40,7 +40,7 @@
           - ReadWriteOnce
         size: "{{ grafana_storage_size }}"
       ingress:
-        enabled: true
+        enabled: "{{ grafana_ingress_enabled }}"
         ingressClassName: "{{ traefik_ingress_class }}"
         hosts:
           - "{{ grafana_host }}"

@@ -25,6 +25,10 @@ argument_specs:
         type: bool
         required: true
         description: Deploy Alertmanager
+      prometheus_ingress_enabled:
+        type: bool
+        required: true
+        description: Create an Ingress (requires a matching ingress controller to serve traffic)
       prometheus_host:
         type: str
         required: true

@@ -20,7 +20,7 @@ secrets_vm_enabled: true
 storage_backend: local-path
 ```
 
-After `vagrant up`, run the needed roles individually. For example, run `role_openbao_server`, then `role_external_secrets`, then `role_traefik`.
+After `vagrant up`, run the roles you need individually. OpenBao must be ready before External Secrets or roles that retrieve credentials from it. Traefik's dashboard uses OpenBao by default; set `traefik_dashboard_enabled: false` to install Traefik without the dashboard.
 
 ## Storage backend choices
 
@@ -36,6 +36,8 @@ storage_backend: nfs
 ```
 
 NFS requires the services VM. Run `role_docker_nfs` on that VM, then run `role_storage` on the control plane.
+
+Prometheus and Grafana can be deployed separately and in either order. Both use persistent storage. Their ingress is enabled by default; set `prometheus_ingress_enabled: false` or `grafana_ingress_enabled: false` to deploy without Traefik. Grafana uses OpenBao through External Secrets for its admin password.
 
 ## Role tags
 
